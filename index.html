@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squirrel</title>
+    <style>
+        canvas {
+            background-color: black;
+        }
+    </style>
+</head>
+
+<body>
+    <script type="javascript">
+        console.log("squirrel loader started");
+    </script>
+    <script type="module">
+        import init from "./pkg/squirrel.js";
+        init().then(() => {
+            console.log("Squirrel WASM blob loaded");
+        });
+    </script>
+    <canvas width="640" height="480"></canvas>
+</body>
+
+</html>
