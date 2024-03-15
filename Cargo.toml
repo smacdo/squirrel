@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 tracing-log = { version = "0.1", features = ["env_logger"] }
 winit = "0.29"
-wgpu = "0.17"
+wgpu = "0.19"
