@@ -1,5 +1,6 @@
 use squirrel::Renderer;
-use tracing_log::log;
+use tracing::warn;
+use tracing_log::log::{self, error};
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -21,7 +22,7 @@ fn main() {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 async fn run_main() {
     // Create main window for rendering.
-    log::info!("creating main window for rendering");
+    log::info!("initializing event loop and creating a main window");
 
     let event_loop = EventLoop::new().expect("failed to create main window event loop");
     let main_window = WindowBuilder::new()
@@ -30,6 +31,7 @@ async fn run_main() {
         .unwrap();
 
     // Initialize the renderer.
+    log::info!("creating render window");
     let mut renderer = Renderer::new(&main_window).await;
 
     // Main window event loop.
@@ -61,6 +63,7 @@ async fn run_main() {
                                     Ok(_) => {}
                                     // Reconfigure surface when lost:
                                     Err(wgpu::SurfaceError::Lost) => {
+                                        warn!("handling surface lost event by re-applying current window size");
                                         renderer.resize(renderer.window_size())
                                     }
                                     // System is out of memory - bail out!
@@ -68,7 +71,9 @@ async fn run_main() {
                                         panic!("WGPU out of memory error")
                                     }
                                     // Other errors (outdated, timeout) should be resolved by next frame
-                                    Err(e) => eprintln!("WGPU ERROR: {:?}", e),
+                                    Err(e) => {
+                                        error!("WGPU error, will skip frame and try to ignore: {e:?}");
+                                    }
                                 }
                             }
                             // Window close requested:
@@ -100,5 +105,5 @@ async fn run_main() {
         .expect("main window event loop processing failed");
 
     // All done.
-    println!("Hello, world!");
+    log::info!("exiting main window loop");
 }
