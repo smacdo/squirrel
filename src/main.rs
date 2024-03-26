@@ -1,5 +1,5 @@
-use squirrel::Renderer;
 use tracing_log::{env_logger, log};
+use tracing_subscriber::{filter, prelude::__tracing_subscriber_SubscriberExt, EnvFilter};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -9,22 +9,18 @@ use winit::{
 };
 
 fn main() {
+    let stdout_subscriber = tracing_subscriber::fmt().pretty().finish();
+    tracing::subscriber::set_global_default(stdout_subscriber)
+        .expect("failed to install stdout global tracing subscriber");
+
+    tracing_log::LogTracer::init().expect("failed to initialize LogTracer");
+
     pollster::block_on(run_main())
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-async fn run_main() {
-    // Initialize logging.
-    env_logger::init();
-
-    // Create main window for rendering.
-    log::info!("creating main window for rendering");
-
-    let event_loop = EventLoop::new().expect("failed to create main window event loop");
-    let main_window = WindowBuilder::new()
-        .with_title("Squirrel Render Window")
-        .build(&event_loop)
-        .unwrap();
+fn main() {
+    // TODO: Configure tracing to emit INFO+ for wgpu, and DEBUG+ for squirrel
 
     // Initialize the renderer.
     let mut renderer = Renderer::new(&main_window).await;
