@@ -19,11 +19,12 @@
     </script>
     <script type="module">
         import init from "./pkg/squirrel.js";
-        init().then(() => {
-            console.log("Squirrel WASM blob loaded");
-        });
+        init()
+            .then(() => {
+                console.log("Squirrel WASM blob loaded");
+            });
     </script>
-    <canvas width="640" height="480"></canvas>
+    <div id="wasm-container"></div>
 </body>
 
 </html>
