@@ -3,6 +3,7 @@ mod wasm_support;
 
 use tracing::warn;
 use tracing_log::log::{self, error};
+use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use winit::{
     event::*,
@@ -127,6 +128,7 @@ pub struct Renderer<'a> {
     queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>,
+    render_pipeline: wgpu::RenderPipeline,
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
     /// references to `window`.
@@ -197,6 +199,52 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
+        // Load the default shader.
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render PIpeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
         // TODO: Log info like GPU name, etc after creation.
 
         // Initialization (hopefully) complete!
@@ -206,6 +254,7 @@ impl<'a> Renderer<'a> {
             queue,
             surface_config,
             window_size,
+            render_pipeline,
             window,
         }
     }
@@ -251,7 +300,7 @@ impl<'a> Renderer<'a> {
 
         // Clear back buffer.
         {
-            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -270,6 +319,10 @@ impl<'a> Renderer<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            // Draw a simple triangle.
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1);
         }
 
         // All done - submit commands for execution.
