@@ -8,13 +8,7 @@ pub fn logging_init() {
     tracing_wasm::set_as_global_default();
 }
 
-pub fn create_canvas(window: &Window, width: u32, height: u32) {
-    // Winit prevents sizing with CSS so the size has to be manually specified.
-    info!("requesting canvas size of {width} x {height}");
-
-    use winit::dpi::PhysicalSize;
-    let _ = window.request_inner_size(PhysicalSize::new(width, height));
-
+pub fn create_canvas(window: &Window) {
     use winit::platform::web::WindowExtWebSys;
     web_sys::window()
         .and_then(|w| w.document())

@@ -42,7 +42,7 @@ pub async fn run_main() {
 
     // Create a canvas for rendering (for webasm mode).
     #[cfg(target_arch = "wasm32")]
-    wasm_support::create_canvas(&main_window, 1024, 768);
+    wasm_support::create_canvas(&main_window);
 
     // Initialize the renderer.
     log::info!("creating render window");
