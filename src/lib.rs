@@ -1,9 +1,12 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm_support;
 
+mod meshes;
+
+use meshes::TRIANGLE_VERTS;
 use tracing::warn;
 use tracing_log::log::{self, error};
-use winit::dpi::PhysicalSize;
+use wgpu::util::DeviceExt;
 use winit::window::Window;
 use winit::{
     event::*,
@@ -129,6 +132,10 @@ pub struct Renderer<'a> {
     surface_config: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: usize,
+    index_buffer: wgpu::Buffer,
+    num_indices: usize,
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
     /// references to `window`.
@@ -216,7 +223,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[meshes::Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -245,6 +252,21 @@ impl<'a> Renderer<'a> {
             multiview: None,
         });
 
+        // Create a vertex buffer and index for simple meshes.
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(meshes::TRIANGLE_VERTS),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let num_vertices = meshes::TRIANGLE_VERTS.len();
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(meshes::TRIANGLE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let num_indices = meshes::TRIANGLE_INDICES.len();
+
         // TODO: Log info like GPU name, etc after creation.
 
         // Initialization (hopefully) complete!
@@ -255,6 +277,10 @@ impl<'a> Renderer<'a> {
             surface_config,
             window_size,
             render_pipeline,
+            vertex_buffer,
+            num_vertices,
+            index_buffer,
+            num_indices,
             window,
         }
     }
@@ -322,7 +348,9 @@ impl<'a> Renderer<'a> {
 
             // Draw a simple triangle.
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
         }
 
         // All done - submit commands for execution.
