@@ -4,9 +4,11 @@ mod wasm_support;
 mod camera;
 mod meshes;
 mod shaders;
+mod textures;
 
 use camera::Camera;
 use glam::Vec3;
+use image::GenericImageView;
 use shaders::CameraUniform;
 use tracing::warn;
 use tracing_log::log::{self, error};
@@ -139,6 +141,7 @@ pub struct Renderer<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: usize,
+    texture_bind_group: wgpu::BindGroup,
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -213,13 +216,108 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
+        // Load a texture for rendering.
+        let diffuse_bytes = include_bytes!("assets/wall.jpg");
+        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
+        let diffuse_rgba = diffuse_image.to_rgba8();
+
+        let diffuse_dims = diffuse_image.dimensions();
+        let diffuse_size = wgpu::Extent3d {
+            width: diffuse_dims.0,
+            height: diffuse_dims.1,
+            depth_or_array_layers: 1,
+        };
+        let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("diffuse texture"),
+            size: diffuse_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &diffuse_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &diffuse_rgba,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * diffuse_dims.0),
+                rows_per_image: Some(diffuse_dims.1),
+            },
+            diffuse_size,
+        );
+
+        // Generate a texture view and sampler for the texture that was just
+        // loaded.
+        let diffuse_texture_view =
+            diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // Create a bind group for texture(s) rendering.
+        //  0 - diffuse texture
+        //  1 - diffuse sampler
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("texture bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This needs to match the filterable field for the texture
+                        // from above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture bind group"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                },
+            ],
+        });
+
         // Initialize a default camera.
         // Position it one unit up, and two units back from world origin and
         // have it look at the origin.
         // +y is up
         // +z is out of the screen.
         let camera = Camera {
-            eye: Vec3::new(0.0, 0.0, 2.0),
+            eye: Vec3::new(0.0, 0.0, 3.0),
             target: Vec3::new(0.0, 0.0, 0.0),
             up: Vec3::new(0.0, 1.0, 0.0),
             aspect: surface_config.width as f32 / surface_config.height as f32,
@@ -267,12 +365,15 @@ impl<'a> Renderer<'a> {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
+
+        // Create the default render pipeline layout and render pipeline objects.
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render PIpeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -335,6 +436,7 @@ impl<'a> Renderer<'a> {
             vertex_buffer,
             index_buffer,
             num_indices,
+            texture_bind_group,
             camera,
             camera_uniform,
             camera_buffer,
@@ -404,11 +506,14 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
             });
 
+            // TODO: Copy latest camera values to camera uniform.
+
             // Draw a simple triangle.
             render_pass.set_pipeline(&self.render_pipeline);
 
             // Bind uniform buffers.
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 
             // Bind mesh buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
