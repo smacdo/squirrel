@@ -3,7 +3,6 @@ mod wasm_support;
 
 mod meshes;
 
-use meshes::TRIANGLE_VERTS;
 use tracing::warn;
 use tracing_log::log::{self, error};
 use wgpu::util::DeviceExt;
@@ -133,7 +132,6 @@ pub struct Renderer<'a> {
     window_size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: usize,
     index_buffer: wgpu::Buffer,
     num_indices: usize,
     /// XXX(scott): `window` must be the last field in the struct because it needs
@@ -255,17 +253,16 @@ impl<'a> Renderer<'a> {
         // Create a vertex buffer and index for simple meshes.
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(meshes::TRIANGLE_VERTS),
+            contents: bytemuck::cast_slice(meshes::RECT_VERTS),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let num_vertices = meshes::TRIANGLE_VERTS.len();
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(meshes::TRIANGLE_INDICES),
+            contents: bytemuck::cast_slice(meshes::RECT_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = meshes::TRIANGLE_INDICES.len();
+        let num_indices = meshes::RECT_INDICES.len();
 
         // TODO: Log info like GPU name, etc after creation.
 
@@ -278,7 +275,6 @@ impl<'a> Renderer<'a> {
             window_size,
             render_pipeline,
             vertex_buffer,
-            num_vertices,
             index_buffer,
             num_indices,
             window,
