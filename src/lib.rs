@@ -1,8 +1,13 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm_support;
 
+mod camera;
 mod meshes;
+mod shaders;
 
+use camera::Camera;
+use glam::Vec3;
+use shaders::CameraUniform;
 use tracing::warn;
 use tracing_log::log::{self, error};
 use wgpu::util::DeviceExt;
@@ -134,6 +139,10 @@ pub struct Renderer<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: usize,
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
     /// references to `window`.
@@ -204,6 +213,55 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
+        // Initialize a default camera.
+        // Position it one unit up, and two units back from world origin and
+        // have it look at the origin.
+        // +y is up
+        // +z is out of the screen.
+        let camera = Camera {
+            eye: Vec3::new(0.0, 0.0, 2.0),
+            target: Vec3::new(0.0, 0.0, 0.0),
+            up: Vec3::new(0.0, 1.0, 0.0),
+            aspect: surface_config.width as f32 / surface_config.height as f32,
+            fov_y: f32::to_radians(45.0),
+            z_near: 0.1,
+            z_far: 100.0,
+        };
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.set_view_projection(camera.view_projection_matrix());
+
+        // Create camera uniform buffer.
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform.view_projection]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera bind group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
         // Load the default shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -212,7 +270,7 @@ impl<'a> Renderer<'a> {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render PIpeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -221,7 +279,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[meshes::Vertex::desc()],
+                buffers: &[shaders::Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -277,6 +335,10 @@ impl<'a> Renderer<'a> {
             vertex_buffer,
             index_buffer,
             num_indices,
+            camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
             window,
         }
     }
@@ -344,8 +406,15 @@ impl<'a> Renderer<'a> {
 
             // Draw a simple triangle.
             render_pass.set_pipeline(&self.render_pipeline);
+
+            // Bind uniform buffers.
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
+            // Bind mesh buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // Draw the mesh.
             render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
         }
 
