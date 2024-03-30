@@ -1926,6 +1926,7 @@ dependencies = [
 name = "squirrel"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "cfg-if",
  "console_error_panic_hook",

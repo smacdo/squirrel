@@ -1,7 +1,7 @@
 use crate::shaders::Vertex;
 
 // CCW, bottom left to bottom right.
-
+/*
 pub const TRIANGLE_VERTS: &[Vertex] = &[
     Vertex {
         position: [0.0, 0.5, 0.0],
@@ -20,7 +20,7 @@ pub const TRIANGLE_VERTS: &[Vertex] = &[
     },
 ];
 pub const TRIANGLE_INDICES: &[u16] = &[0, 1, 2];
-
+*/
 pub const RECT_VERTS: &[Vertex] = &[
     Vertex {
         position: [0.5, 0.5, 0.0],
@@ -45,6 +45,7 @@ pub const RECT_VERTS: &[Vertex] = &[
 ];
 pub const RECT_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
 
+/*
 pub const PENTAGON_VERTS: &[Vertex] = &[
     Vertex {
         position: [-0.0868241, 0.49240386, 0.0],
@@ -74,3 +75,4 @@ pub const PENTAGON_VERTS: &[Vertex] = &[
 ];
 
 pub const PENTAGON_INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
+*/
