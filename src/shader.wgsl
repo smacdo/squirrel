@@ -1,3 +1,10 @@
+
+@group(0) @binding(0)
+var diffuse_texture: texture_2d<f32>;
+@group(0) @binding(1)
+var diffuse_sampler: sampler;
+
+
 struct CameraUniform {
     view_projection: mat4x4<f32>,
 };
@@ -23,19 +30,15 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
 
     v.color = mesh.color;
     v.tex_coords = mesh.tex_coords;
-    v.clip_position = camera.view_projection * vec4<f32>(mesh.position, 1.0);
+    //v.clip_position = camera.view_projection * vec4<f32>(mesh.position, 1.0);
+v.clip_position =  vec4<f32>(mesh.position, 1.0);
 
     return v;
 }
-
-@group(0) @binding(0)
-var diffuse_texture: texture_2d<f32>;
-@group(0) @binding(1)
-var diffuse_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
     let vert_color = vec4<f32>(in.color, 1.0);
-    return tex_color;
+    return tex_color * vert_color;
 }

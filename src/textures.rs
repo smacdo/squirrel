@@ -1,5 +1,6 @@
 use anyhow::*;
 use image::GenericImageView;
+use tracing::info;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -15,6 +16,7 @@ impl Texture {
         label: Option<&str>,
     ) -> Result<Self> {
         let image = image::load_from_memory(image_bytes)?;
+        info!("image size {}x{}", image.width(), image.height());
         Self::from_image(device, queue, &image, label)
     }
 
@@ -25,13 +27,17 @@ impl Texture {
         label: Option<&str>,
     ) -> Result<Self> {
         let rgba = image.to_rgba8();
+        info!("rgba image size {}x{}", rgba.width(), rgba.height());
 
         let dims = image.dimensions();
+        info!("dims {}x{}", dims.0, dims.1);
+
         let size = wgpu::Extent3d {
             width: dims.0,
             height: dims.1,
             depth_or_array_layers: 1,
         };
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label,
             size,
@@ -71,6 +77,7 @@ impl Texture {
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
+        info!("done with texture");
 
         Ok(Self {
             texture,

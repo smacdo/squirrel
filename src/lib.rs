@@ -10,7 +10,7 @@ use camera::Camera;
 use glam::Vec3;
 use shaders::CameraUniform;
 use textures::Texture;
-use tracing::warn;
+use tracing::{info, warn};
 use tracing_log::log::{self, error};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -57,18 +57,25 @@ pub async fn run_main() {
     log::info!("creating render window");
     let mut renderer = Renderer::new(&main_window).await;
 
+    log::info!("initial renderer window size: {:?}", renderer.window_size);
+
     // Main window event loop.
     //
     // NOTE: Window events are first sent to a custom input processer, and only
     //       if the processor returns false are they further dispatched in the
     //       event dispatcher below.
     log::info!("starting main window event loop");
+    let mut surface_configured = false; // TODO: refactor this away?
 
     event_loop
         .run(move |event, control_flow| {
             let renderer_window_id = renderer.window().id();
 
             match event {
+                Event::Resumed => {
+                    info!("resumed event received, rendering can start");
+                    surface_configured = true;
+                }
                 Event::WindowEvent { event, window_id } if window_id == renderer_window_id => {
                     // Allow the renderer to consume input events prior to processing them here.
                     if renderer.input(&event) {
@@ -78,6 +85,13 @@ pub async fn run_main() {
                         match event {
                             // Redraw window:
                             WindowEvent::RedrawRequested => {
+                                /// XXX(scott): is this needed? why?
+                                renderer.window.request_redraw();
+
+                                if !surface_configured {
+                                    return;
+                                }
+
                                 // Update simulation state.
                                 renderer.update();
 
@@ -110,12 +124,17 @@ pub async fn run_main() {
                                 }
                             }
                             // Window resized:
-                            WindowEvent::Resized(physical_size) => renderer.resize(physical_size),
+                            WindowEvent::Resized(physical_size) => {
+                                info!("window resized to {physical_size:?}");
+                                renderer.resize(physical_size);
+                            }
                             // Window DPI changed:
                             WindowEvent::ScaleFactorChanged { .. } => {
                                 // TODO(scott): The API diverges from the guide. Double check if correct.
                                 let new_size = renderer.window().inner_size();
                                 renderer.resize(new_size);
+
+                                info!("scale factor changed event fired, resized to {new_size:?}");
                             }
                             _ => {}
                         }
@@ -150,6 +169,7 @@ pub struct Renderer<'a> {
     /// to be dropped after `surface`, because the surface contains unsafe
     /// references to `window`.
     window: &'a Window,
+    warn_once_frame: usize,
 }
 
 // TODO: Renderer::new() should return Result<Self> and remove .unwrap().
@@ -396,6 +416,7 @@ impl<'a> Renderer<'a> {
             camera_buffer,
             camera_bind_group,
             window,
+            warn_once_frame: 0,
         }
     }
 
