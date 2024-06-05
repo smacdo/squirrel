@@ -8,6 +8,7 @@ mod textures;
 
 use camera::Camera;
 use glam::Vec3;
+use image::GenericImageView;
 use shaders::CameraUniform;
 use textures::Texture;
 use tracing::{info, warn};
@@ -67,6 +68,9 @@ pub async fn run_main() {
     log::info!("starting main window event loop");
     let mut surface_configured = false; // TODO: refactor this away?
 
+    // EXPERIMENT: Recreate and upload the texture after resume event fires.
+    let mut recreate_texture_once = false;
+
     event_loop
         .run(move |event, control_flow| {
             let renderer_window_id = renderer.window().id();
@@ -91,6 +95,7 @@ pub async fn run_main() {
                                 if !surface_configured {
                                     return;
                                 }
+                        
 
                                 // Update simulation state.
                                 renderer.update();
@@ -125,7 +130,6 @@ pub async fn run_main() {
                             }
                             // Window resized:
                             WindowEvent::Resized(physical_size) => {
-                                info!("window resized to {physical_size:?}");
                                 renderer.resize(physical_size);
                             }
                             // Window DPI changed:
@@ -133,8 +137,6 @@ pub async fn run_main() {
                                 // TODO(scott): The API diverges from the guide. Double check if correct.
                                 let new_size = renderer.window().inner_size();
                                 renderer.resize(new_size);
-
-                                info!("scale factor changed event fired, resized to {new_size:?}");
                             }
                             _ => {}
                         }
@@ -165,11 +167,11 @@ pub struct Renderer<'a> {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    texture: wgpu::Texture,
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
     /// references to `window`.
     window: &'a Window,
-    warn_once_frame: usize,
 }
 
 // TODO: Renderer::new() should return Result<Self> and remove .unwrap().
@@ -223,6 +225,13 @@ impl<'a> Renderer<'a> {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+
+        if surface_format.is_srgb() {
+            info!("rendering surface supports sRGB");
+        } else {
+            info!("no sRGB support found for the main rendering surface, defaulting to first available");
+        }
+
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -290,6 +299,9 @@ impl<'a> Renderer<'a> {
         // have it look at the origin.
         // +y is up
         // +z is out of the screen.
+        // 
+        // TODO: This doesn't work on webasm platforms because width/height
+        //       isn't available until after renderer is initialized!
         let camera = Camera {
             eye: Vec3::new(0.0, 0.0, 3.0),
             target: Vec3::new(0.0, 0.0, 0.0),
@@ -415,8 +427,8 @@ impl<'a> Renderer<'a> {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            texture: texture.texture,
             window,
-            warn_once_frame: 0,
         }
     }
 
@@ -436,6 +448,10 @@ impl<'a> Renderer<'a> {
             self.surface_config.width = new_size.width;
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
+
+            // TODO: This logic should be moved into camera?
+            self.camera.aspect =
+                new_size.width as f32 / new_size.height as f32
         }
     }
 
@@ -445,7 +461,11 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn update(&mut self) {
-        // TODO(scott): implement me!
+        // Copy camera projection matrix to shader.
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.set_view_projection(self.camera.view_projection_matrix());
+
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform.view_projection]));
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -481,7 +501,6 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
             });
 
-            // TODO: Copy latest camera values to camera uniform.
 
             // Draw a simple triangle.
             render_pass.set_pipeline(&self.render_pipeline);

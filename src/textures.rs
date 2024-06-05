@@ -16,7 +16,6 @@ impl Texture {
         label: Option<&str>,
     ) -> Result<Self> {
         let image = image::load_from_memory(image_bytes)?;
-        info!("image size {}x{}", image.width(), image.height());
         Self::from_image(device, queue, &image, label)
     }
 
@@ -27,10 +26,7 @@ impl Texture {
         label: Option<&str>,
     ) -> Result<Self> {
         let rgba = image.to_rgba8();
-        info!("rgba image size {}x{}", rgba.width(), rgba.height());
-
         let dims = image.dimensions();
-        info!("dims {}x{}", dims.0, dims.1);
 
         let size = wgpu::Extent3d {
             width: dims.0,
@@ -77,7 +73,6 @@ impl Texture {
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-        info!("done with texture");
 
         Ok(Self {
             texture,
