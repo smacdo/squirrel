@@ -1,22 +1,3 @@
-use glam::Mat4;
-
-/// Uniform buffer data for the camera.
-pub struct CameraUniform {
-    pub view_projection: Mat4,
-}
-
-impl CameraUniform {
-    pub fn new() -> Self {
-        Self {
-            view_projection: Mat4::IDENTITY,
-        }
-    }
-
-    pub fn set_view_projection(&mut self, view_projection: Mat4) {
-        self.view_projection = view_projection
-    }
-}
-
 /// Mesh vertex.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

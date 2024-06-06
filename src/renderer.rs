@@ -5,7 +5,7 @@ use winit::window::Window;
 
 use crate::camera::Camera;
 use crate::meshes;
-use crate::shaders::{self, CameraUniform};
+use crate::shaders::{self};
 use crate::textures::Texture;
 
 /// The renderer is pretty much everything right now while I ramp up on the
@@ -174,9 +174,7 @@ impl<'a> Renderer<'a> {
             surface_config.width,
             surface_config.height,
         );
-
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.set_view_projection(camera.view_projection_matrix());
+        let view_projection = camera.view_projection_matrix();
 
         // Create a uniform per-frame buffer to store shader values such as
         // the camera projection matrix.
@@ -198,7 +196,7 @@ impl<'a> Renderer<'a> {
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform.view_projection]),
+            contents: bytemuck::cast_slice(&[view_projection]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -326,13 +324,12 @@ impl<'a> Renderer<'a> {
 
     pub fn update(&mut self) {
         // Copy camera projection matrix to shader.
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.set_view_projection(self.camera.view_projection_matrix());
+        let view_projection = self.camera.view_projection_matrix();
 
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&[camera_uniform.view_projection]),
+            bytemuck::cast_slice(&[view_projection]),
         );
     }
 
