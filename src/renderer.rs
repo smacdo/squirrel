@@ -21,10 +21,10 @@ pub struct Renderer<'a> {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: usize,
-    pub texture_bind_group: wgpu::BindGroup,
     pub camera: Camera,
     pub camera_buffer: wgpu::Buffer,
-    pub camera_bind_group: wgpu::BindGroup,
+    pub per_frame_bind_group: wgpu::BindGroup,
+    pub per_model_bind_group: wgpu::BindGroup,
     pub texture: wgpu::Texture,
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
@@ -112,11 +112,12 @@ impl<'a> Renderer<'a> {
         // Create a bind group for texture(s) rendering.
         //  0 - diffuse texture
         //  1 - diffuse sampler
-        let texture_bind_group_layout =
+        let per_model_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("texture bind group layout"),
+                label: Some("per-model bind group layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
+                        // 0: Diffuse texture 2d.
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
@@ -127,6 +128,7 @@ impl<'a> Renderer<'a> {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
+                        // 1: Diffuse texture sampler.
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         // This needs to match the filterable field for the texture
@@ -137,15 +139,17 @@ impl<'a> Renderer<'a> {
                 ],
             });
 
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("texture bind group"),
-            layout: &texture_bind_group_layout,
+        let per_model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("per-model bind group"),
+            layout: &per_model_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
+                    // 0: Diffuse texture 2d.
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(&texture.view),
                 },
                 wgpu::BindGroupEntry {
+                    // 1: Diffuse texture sampler.
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&texture.sampler),
                 },
@@ -174,17 +178,13 @@ impl<'a> Renderer<'a> {
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.set_view_projection(camera.view_projection_matrix());
 
-        // Create camera uniform buffer.
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform.view_projection]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let camera_bind_group_layout =
+        // Create a uniform per-frame buffer to store shader values such as
+        // the camera projection matrix.
+        let per_frame_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("camera bind group layout"),
+                label: Some("per-frame bind group layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
+                    // Camera.
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
@@ -196,10 +196,17 @@ impl<'a> Renderer<'a> {
                 }],
             });
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera bind group"),
-            layout: &camera_bind_group_layout,
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("camera buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform.view_projection]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let per_frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("per-frame bind group"),
+            layout: &per_frame_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
+                // Camera
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
             }],
@@ -215,7 +222,7 @@ impl<'a> Renderer<'a> {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                bind_group_layouts: &[&per_frame_bind_group_layout, &per_model_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -281,10 +288,10 @@ impl<'a> Renderer<'a> {
             vertex_buffer,
             index_buffer,
             num_indices,
-            texture_bind_group,
+            per_model_bind_group,
             camera,
             camera_buffer,
-            camera_bind_group,
+            per_frame_bind_group,
             texture: texture.texture,
             window,
         }
@@ -366,8 +373,8 @@ impl<'a> Renderer<'a> {
             render_pass.set_pipeline(&self.render_pipeline);
 
             // Bind uniform buffers.
-            render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.per_frame_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.per_model_bind_group, &[]);
 
             // Bind mesh buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
