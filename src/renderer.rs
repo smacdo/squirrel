@@ -4,6 +4,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::camera::Camera;
+use crate::gameplay::CameraController;
 use crate::meshes;
 use crate::shaders::{self};
 use crate::textures::Texture;
@@ -26,6 +27,10 @@ pub struct Renderer<'a> {
     pub per_frame_bind_group: wgpu::BindGroup,
     pub per_model_bind_group: wgpu::BindGroup,
     pub texture: wgpu::Texture,
+
+    // TODO(scott): extract gameplay code into separate module.
+    pub camera_controller: CameraController,
+
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
     /// references to `window`.
@@ -291,6 +296,7 @@ impl<'a> Renderer<'a> {
             camera_buffer,
             per_frame_bind_group,
             texture: texture.texture,
+            camera_controller: CameraController::new(0.2),
             window,
         }
     }
@@ -317,12 +323,16 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub fn input(&mut self, _event: &winit::event::WindowEvent) -> bool {
-        // TODO(scott): implement me!
-        false
+    pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+        self.camera_controller.process_input(event)
     }
 
+    // TODO(scott): update should get a delta time, and pass the delta time to
+    // the camera controller.
     pub fn update(&mut self) {
+        // Allow camera controoler to control the scene's camera.
+        self.camera_controller.update_camera(&mut self.camera);
+
         // Copy camera projection matrix to shader.
         let view_projection = self.camera.view_projection_matrix();
 

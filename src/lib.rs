@@ -6,8 +6,10 @@ mod meshes;
 mod shaders;
 mod textures;
 mod renderer;
+mod gameplay;
 
 
+use gameplay::CameraController;
 use renderer::Renderer;
 use tracing::{info, warn};
 use tracing_log::log::{self, error};
@@ -62,7 +64,7 @@ pub async fn run_main() {
     //       if the processor returns false are they further dispatched in the
     //       event dispatcher below.
     log::info!("starting main window event loop");
-    let mut surface_configured = false; // TODO: refactor this away?
+    let mut surface_configured = false;
 
     // EXPERIMENT: Recreate and upload the texture after resume event fires.
     let _recreate_texture_once = false;
@@ -118,6 +120,7 @@ pub async fn run_main() {
                             WindowEvent::CloseRequested => control_flow.exit(),
                             // Keyboard input:
                             WindowEvent::KeyboardInput { event, .. } => {
+                                // Quit when escape is pressed.
                                 if event.state == ElementState::Pressed {
                                     if let Key::Named(NamedKey::Escape) = event.logical_key {
                                         control_flow.exit()
@@ -126,7 +129,7 @@ pub async fn run_main() {
                             }
                             // Window resized:
                             WindowEvent::Resized(physical_size) => {
-                                renderer.resize(physical_size);
+                                renderer.resize(physical_size)
                             }
                             // Window DPI changed:
                             WindowEvent::ScaleFactorChanged { .. } => {
