@@ -31,7 +31,6 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
     v.color = mesh.color;
     v.tex_coords = mesh.tex_coords;
     v.clip_position = camera.view_projection * vec4<f32>(mesh.position, 1.0);
-    v.clip_position =  vec4<f32>(mesh.position, 1.0);
 
     return v;
 }

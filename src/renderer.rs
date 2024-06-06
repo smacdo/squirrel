@@ -23,7 +23,6 @@ pub struct Renderer<'a> {
     pub num_indices: usize,
     pub texture_bind_group: wgpu::BindGroup,
     pub camera: Camera,
-    pub camera_uniform: CameraUniform, // TODO(scott): Eliminate?
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group: wgpu::BindGroup,
     pub texture: wgpu::Texture,
@@ -161,15 +160,16 @@ impl<'a> Renderer<'a> {
         //
         // TODO: This doesn't work on webasm platforms because width/height
         //       isn't available until after renderer is initialized!
-        let camera = Camera {
-            eye: Vec3::new(0.0, 0.0, 3.0),
-            target: Vec3::new(0.0, 0.0, 0.0),
-            up: Vec3::new(0.0, 1.0, 0.0),
-            aspect: surface_config.width as f32 / surface_config.height as f32,
-            fov_y: f32::to_radians(45.0),
-            z_near: 0.1,
-            z_far: 100.0,
-        };
+        let camera = Camera::new(
+            Vec3::new(0.0, 0.0, 3.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            f32::to_radians(45.0),
+            0.1,
+            100.0,
+            surface_config.width,
+            surface_config.height,
+        );
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.set_view_projection(camera.view_projection_matrix());
@@ -283,7 +283,6 @@ impl<'a> Renderer<'a> {
             num_indices,
             texture_bind_group,
             camera,
-            camera_uniform,
             camera_buffer,
             camera_bind_group,
             texture: texture.texture,
@@ -307,8 +306,9 @@ impl<'a> Renderer<'a> {
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
 
-            // TODO: This logic should be moved into camera?
-            self.camera.aspect = new_size.width as f32 / new_size.height as f32
+            self.camera
+                .set_viewport_size(new_size.width, new_size.height)
+                .unwrap_or_else(|e| warn!("{e}"))
         }
     }
 
