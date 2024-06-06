@@ -1,6 +1,5 @@
 use anyhow::*;
 use image::GenericImageView;
-use tracing::info;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
