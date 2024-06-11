@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use glam::Vec3;
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
@@ -6,7 +8,7 @@ use winit::window::Window;
 use crate::camera::Camera;
 use crate::gameplay::CameraController;
 use crate::meshes;
-use crate::shaders::{self};
+use crate::shaders;
 use crate::textures::Texture;
 
 /// The renderer is pretty much everything right now while I ramp up on the
@@ -23,13 +25,13 @@ pub struct Renderer<'a> {
     pub index_buffer: wgpu::Buffer,
     pub num_indices: usize,
     pub camera: Camera,
-    pub camera_buffer: wgpu::Buffer,
-    pub per_frame_bind_group: wgpu::BindGroup,
-    pub per_model_bind_group: wgpu::BindGroup,
+    pub per_frame_uniforms: shaders::PerFrameUniforms,
+    pub per_model_bind_group: wgpu::BindGroup, // TODO: Wrap this like PerFrameUniforms!
     pub texture: wgpu::Texture,
 
     // TODO(scott): extract gameplay code into separate module.
     pub camera_controller: CameraController,
+    sys_time_elapsed: std::time::Duration,
 
     /// XXX(scott): `window` must be the last field in the struct because it needs
     /// to be dropped after `surface`, because the surface contains unsafe
@@ -179,41 +181,10 @@ impl<'a> Renderer<'a> {
             surface_config.width,
             surface_config.height,
         );
-        let view_projection = camera.view_projection_matrix();
 
         // Create a uniform per-frame buffer to store shader values such as
         // the camera projection matrix.
-        let per_frame_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("per-frame bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    // Camera.
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("camera buffer"),
-            contents: bytemuck::cast_slice(&[view_projection]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let per_frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("per-frame bind group"),
-            layout: &per_frame_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                // Camera
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
+        let per_frame_uniforms = shaders::PerFrameUniforms::new(&device);
 
         // Load the default shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -225,7 +196,10 @@ impl<'a> Renderer<'a> {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&per_frame_bind_group_layout, &per_model_bind_group_layout],
+                bind_group_layouts: &[
+                    per_frame_uniforms.bind_group_layout(),
+                    &per_model_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -293,8 +267,8 @@ impl<'a> Renderer<'a> {
             num_indices,
             per_model_bind_group,
             camera,
-            camera_buffer,
-            per_frame_bind_group,
+            sys_time_elapsed: Default::default(),
+            per_frame_uniforms,
             texture: texture.texture,
             camera_controller: CameraController::new(0.2),
             window,
@@ -329,18 +303,20 @@ impl<'a> Renderer<'a> {
 
     // TODO(scott): update should get a delta time, and pass the delta time to
     // the camera controller.
-    pub fn update(&mut self) {
+    pub fn update(&mut self, delta: Duration) {
         // Allow camera controoler to control the scene's camera.
-        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_controller
+            .update_camera(&mut self.camera, delta);
 
-        // Copy camera projection matrix to shader.
-        let view_projection = self.camera.view_projection_matrix();
+        // Update per-frame shader uniforms.
+        self.sys_time_elapsed += delta;
 
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[view_projection]),
-        );
+        self.per_frame_uniforms
+            .set_view_projection(self.camera.view_projection_matrix());
+        self.per_frame_uniforms
+            .set_time_elapsed_seconds(self.sys_time_elapsed);
+
+        self.per_frame_uniforms.write_to_gpu(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -354,20 +330,25 @@ impl<'a> Renderer<'a> {
                     label: Some("Render loop encoder"),
                 });
 
-        // Clear back buffer.
+        // Draw a simple triangle.
         {
+            // Prepare the default rendering pipeline for drawing a mesh.
+
             let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
+                        // Clear the back buffer when rendering.
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.1,
                             g: 0.2,
                             b: 0.3,
                             a: 1.0,
                         }),
+                        // Write the values from the fragment shader to the back
+                        // buffer.
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -376,14 +357,12 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
             });
 
-            // Draw a simple triangle.
             render_pass.set_pipeline(&self.render_pipeline);
 
-            // Bind uniform buffers.
-            render_pass.set_bind_group(0, &self.per_frame_bind_group, &[]);
+            render_pass.set_bind_group(0, self.per_frame_uniforms.bind_group(), &[]);
             render_pass.set_bind_group(1, &self.per_model_bind_group, &[]);
 
-            // Bind mesh buffers.
+            // Bind the mesh's vertex and index buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 

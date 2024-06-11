@@ -7,9 +7,9 @@ mod shaders;
 mod textures;
 mod renderer;
 mod gameplay;
+mod platform;
 
-
-use gameplay::CameraController;
+use platform::SystemTime;
 use renderer::Renderer;
 use tracing::{info, warn};
 use tracing_log::log::{self, error};
@@ -64,6 +64,8 @@ pub async fn run_main() {
     //       if the processor returns false are they further dispatched in the
     //       event dispatcher below.
     log::info!("starting main window event loop");
+    let mut last_redraw = SystemTime::now();
+
     let mut surface_configured = false;
 
     // EXPERIMENT: Recreate and upload the texture after resume event fires.
@@ -87,16 +89,22 @@ pub async fn run_main() {
                         match event {
                             // Redraw window:
                             WindowEvent::RedrawRequested => {
-                                // XXX(scott): is this needed? why?
+                                // Request a redraw.
+                                // TODO(scott): Switch to continuous event loop.
                                 renderer.window.request_redraw();
 
+                                // Measure amount of time elapsed.
+                                let time_since_last_redraw = SystemTime::now() - last_redraw;
+                                last_redraw = SystemTime::now();
+
+                                // Don't try rendering until the window surface
+                                // is ready.
                                 if !surface_configured {
                                     return;
                                 }
                         
-
                                 // Update simulation state.
-                                renderer.update();
+                                renderer.update(time_since_last_redraw);
 
                                 // Render simulation.
                                 match renderer.render() {
@@ -150,4 +158,3 @@ pub async fn run_main() {
     // All done.
     log::info!("exiting main window loop");
 }
-

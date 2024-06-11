@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use winit::{
     event::{ElementState, WindowEvent},
-    keyboard::{KeyCode, NamedKey, PhysicalKey},
+    keyboard::{KeyCode, PhysicalKey},
 };
 
 use crate::camera::Camera;
@@ -9,7 +11,7 @@ use crate::camera::Camera;
 /// also optionally rotates in a way that's sort of like an orbital camera but
 /// not really.
 ///
-/// TODO(scott): Make a real orbital camera.
+/// TODO(scott): Rewrite this as a real orbital camera.
 pub struct CameraController {
     /// The number of units this controller moves per second in the direction
     /// it is facing.
@@ -71,18 +73,13 @@ impl CameraController {
 
     /// Applies updates to the camera that reflect the current state of this
     /// controller.
-    ///
-    /// TODO(scott): Add a delta time argument, and adjust forward by that.
-    /// Right now speed is independent of update time.
-    pub fn update_camera(&self, camera: &mut Camera) {
+    pub fn update_camera(&self, camera: &mut Camera, _delta: Duration) {
         let forward = camera.target - camera.eye;
         let forward_dir = forward.normalize();
         let forward_distance = forward.length();
 
         // Move camera forward / backward. Take care not to glitch into the
         // center of the scene.
-        // TODO(scott): Rewrite and use minimum/maximum distance limits.
-        // TODO(scott): Clamp if distance is negative?
         if self.move_forward && forward_distance > self.speed {
             camera.eye += forward_dir * self.speed;
         }
@@ -114,3 +111,7 @@ impl CameraController {
         if self.move_right {}
     }
 }
+
+// TODO(scott): Simple tests for camera controller.
+//  1. Move forward/backward/left/right: is new position, eye expected?
+//  2. Does camera clamp the minimum/maximum forward?

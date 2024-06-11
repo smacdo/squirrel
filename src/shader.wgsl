@@ -1,5 +1,6 @@
-struct CameraUniform {
+struct PerFrameUniforms {
     view_projection: mat4x4<f32>,
+    time_elapsed_seconds: f32,
 };
 
 struct VertexInput {
@@ -9,13 +10,28 @@ struct VertexInput {
 }
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    /// Vertex output in "clip space" which can be visualized as:
+    ///  (.u must be set to 1.0).
+    ///
+    ///  <----------X---------->
+    /// ^ 
+    /// |          +1
+    /// |           
+    /// Y    -1     .     +1
+    /// | 
+    /// |          -1
+    /// v
+    ///
+    /// See: https://webgpufundamentals.org/webgpu/lessons/webgpu-fundamentals.html
+    @builtin(position) position_cs: vec4<f32>,
+    /// RGB color of the vertex.
     @location(0) color: vec3<f32>,
+    /// UV texture coordinates of the vertex.
     @location(1) tex_coords: vec2<f32>,
 };
 
 @group(0) @binding(0)
-var<uniform> camera: CameraUniform;
+var<uniform> per_frame: PerFrameUniforms;
 
 @group(1) @binding(0)
 var diffuse_texture: texture_2d<f32>;
@@ -27,8 +43,11 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
     var v: VertexOutput;
 
     v.color = mesh.color;
+    v.color.r *= sin(per_frame.time_elapsed_seconds);
+    v.color.g *= cos(per_frame.time_elapsed_seconds);
+
     v.tex_coords = mesh.tex_coords;
-    v.clip_position = camera.view_projection * vec4<f32>(mesh.position, 1.0);
+    v.position_cs = per_frame.view_projection * vec4<f32>(mesh.position, 1.0);
 
     return v;
 }
@@ -37,5 +56,7 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
     let vert_color = vec4<f32>(in.color, 1.0);
-    return tex_color * vert_color;
+    let frag_color = tex_color * vert_color;
+
+    return frag_color;
 }
