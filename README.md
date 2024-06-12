@@ -34,3 +34,5 @@ demo scene!
 
 # TODO
 - wasm output is too dark on account of backbuffer not support sRGB. Fix this.
+- CI profile to test windows, linux, mac builds
+- CD profile to build webasm and then publish somewhere for viewing on the web

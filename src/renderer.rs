@@ -26,6 +26,7 @@ pub struct Renderer<'a> {
     pub queue: wgpu::Queue,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub window_size: winit::dpi::PhysicalSize<u32>,
+    pub depth_texture: Texture,
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -177,6 +178,11 @@ impl<'a> Renderer<'a> {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        // Create a depth buffer to ensure fragments are correctly rendered
+        // back to front.
+        let depth_texture =
+            Texture::create_depth_texture(&device, &surface_config, Some("depth buffer"));
+
         // Create the default render pipeline layout and render pipeline objects.
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -214,7 +220,13 @@ impl<'a> Renderer<'a> {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Texture::DEPTH_TEXTURE_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // Fragments drawn front to back.
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -277,6 +289,7 @@ impl<'a> Renderer<'a> {
             queue,
             surface_config,
             window_size,
+            depth_texture,
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -298,6 +311,7 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        // TODO(scott); Ensure resize doesn't fire nonstop when drag-resizing.
         if new_size.width == 0 || new_size.height == 0 {
             warn!(
                 "invalid width of {} or height {} when resizing",
@@ -309,6 +323,14 @@ impl<'a> Renderer<'a> {
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
 
+            // Recreate the depth buffer to match the new window size.
+            self.depth_texture = Texture::create_depth_texture(
+                &self.device,
+                &self.surface_config,
+                Some("depth buffer"),
+            );
+
+            // Recreate the camera viewport to match the new window size.
             self.camera
                 .set_viewport_size(new_size.width, new_size.height)
                 .unwrap_or_else(|e| warn!("{e}"))
@@ -399,7 +421,14 @@ impl<'a> Renderer<'a> {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
