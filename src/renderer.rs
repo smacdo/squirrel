@@ -111,7 +111,7 @@ impl<'a> Renderer<'a> {
         surface.configure(&device, &surface_config);
 
         // Load a texture for rendering.
-        let diffuse_bytes = include_bytes!("assets/wall.jpg");
+        let diffuse_bytes = include_bytes!("assets/test.png");
         let texture =
             Texture::from_image_bytes(&device, &queue, diffuse_bytes, Some("diffuse texture"))
                 .unwrap();
