@@ -1,10 +1,12 @@
 mod meshes;
+mod models;
 mod shaders;
 mod textures;
 
 use std::time::Duration;
 
 use glam::Vec3;
+use models::{spawn_object_instances_as_grid, ModelInstanceBuffer};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -34,6 +36,7 @@ pub struct Renderer<'a> {
     /// XXX(scott): This is a temporary demonstration of swapping textures.
     pub model_uniforms_2: PerModelUniforms,
     pub switch_to_uniform_2: bool,
+    pub model_instance_buffer: ModelInstanceBuffer,
 
     // TODO(scott): extract gameplay code into separate module.
     pub camera_controller: CameraController,
@@ -153,7 +156,8 @@ impl<'a> Renderer<'a> {
         // +y is up
         // +z is out of the screen.
         let camera = Camera::new(
-            Vec3::new(0.0, 0.0, 3.0),
+            //Vec3::new(0.0, 0.0, 3.0),
+            Vec3::new(0.0, 5.0, 10.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
             f32::to_radians(45.0),
@@ -190,7 +194,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[shaders::Vertex::desc()],
+                buffers: &[shaders::Vertex::desc(), ModelInstanceBuffer::layout_desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -258,6 +262,12 @@ impl<'a> Renderer<'a> {
             .unwrap(),
         );
 
+        // Instancing demo!
+        let model_instance_buffer = ModelInstanceBuffer::new(
+            &device,
+            spawn_object_instances_as_grid(10, 10, Vec3::new(5.0, 0.0, 5.0)),
+        );
+
         // TODO: Log info like GPU name, etc after creation.
 
         // Initialization (hopefully) complete!
@@ -274,6 +284,7 @@ impl<'a> Renderer<'a> {
             model_uniforms,
             model_uniforms_2,
             switch_to_uniform_2: false,
+            model_instance_buffer,
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
@@ -393,10 +404,16 @@ impl<'a> Renderer<'a> {
 
             // Bind the mesh's vertex and index buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.model_instance_buffer.gpu_buffer().slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             // Draw the mesh.
-            render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
+            //render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
+            render_pass.draw_indexed(
+                0..self.num_indices as u32,
+                0,
+                0..self.model_instance_buffer.instances_count() as _,
+            );
         }
 
         // All done - submit commands for execution.

@@ -9,6 +9,17 @@ struct VertexInput {
     @location(2) tex_coords: vec2<f32>,
 }
 
+/// Per-instance data coming from the instance buffer.
+///
+/// The 4x4 transform matrix is passed as 4 individual column vectors that have
+/// to be re-assembled into a matrix in the shader.
+struct InstanceInput {
+    @location(3) model_view_c0: vec4<f32>,
+    @location(4) model_view_c1: vec4<f32>,
+    @location(5) model_view_c2: vec4<f32>,
+    @location(6) model_view_c3: vec4<f32>,
+}
+
 struct VertexOutput {
     /// Vertex output in "clip space" which can be visualized as:
     ///  (.u must be set to 1.0).
@@ -39,12 +50,19 @@ var diffuse_texture: texture_2d<f32>;
 var diffuse_sampler: sampler;
 
 @vertex
-fn vs_main(mesh: VertexInput) -> VertexOutput {
+fn vs_main(mesh: VertexInput, instance: InstanceInput) -> VertexOutput {
+    let model_view = mat4x4(
+        instance.model_view_c0,
+        instance.model_view_c1,
+        instance.model_view_c2,
+        instance.model_view_c3,
+    );
+
     var v: VertexOutput;
 
     v.color = mesh.color;
     v.tex_coords = mesh.tex_coords;
-    v.position_cs = per_frame.view_projection * vec4<f32>(mesh.position, 1.0);
+    v.position_cs = per_frame.view_projection * model_view * vec4<f32>(mesh.position, 1.0);
 
     return v;
 }
