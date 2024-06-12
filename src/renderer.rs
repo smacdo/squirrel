@@ -5,7 +5,7 @@ mod textures;
 
 use std::time::Duration;
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 use instancing::{spawn_object_instances_as_grid, ModelInstanceBuffer};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
@@ -265,7 +265,7 @@ impl<'a> Renderer<'a> {
         // Instancing demo!
         let model_instance_buffer = ModelInstanceBuffer::new(
             &device,
-            spawn_object_instances_as_grid(10, 10, Vec3::new(5.0, 0.0, 5.0)),
+            spawn_object_instances_as_grid(10, 10, Vec3::new(5.0, 0.0, 5.0), 45_f32.to_radians()),
         );
 
         // TODO: Log info like GPU name, etc after creation.
@@ -349,6 +349,21 @@ impl<'a> Renderer<'a> {
             .set_time_elapsed_seconds(self.sys_time_elapsed);
 
         self.per_frame_uniforms.write_to_gpu(&self.queue);
+
+        // Rotate all model instances to demonstrate dynamic updates.
+        let angle = (self.sys_time_elapsed.as_secs_f32() * 25.0).rem_euclid(365.0);
+        self.model_instance_buffer
+            .instances_mut()
+            .iter_mut()
+            .for_each(|x| {
+                x.rotation = if x.position == Vec3::ZERO {
+                    Quat::from_axis_angle(Vec3::Z, 0.0)
+                } else {
+                    Quat::from_axis_angle(x.position.normalize(), angle.to_radians())
+                };
+            });
+
+        self.model_instance_buffer.write_to_gpu(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -412,7 +427,7 @@ impl<'a> Renderer<'a> {
             render_pass.draw_indexed(
                 0..self.num_indices as u32,
                 0,
-                0..self.model_instance_buffer.instances_count() as _,
+                0..self.model_instance_buffer.instances().len() as _,
             );
         }
 
