@@ -1,12 +1,12 @@
+mod instancing;
 mod meshes;
-mod models;
 mod shaders;
 mod textures;
 
 use std::time::Duration;
 
 use glam::Vec3;
-use models::{spawn_object_instances_as_grid, ModelInstanceBuffer};
+use instancing::{spawn_object_instances_as_grid, ModelInstanceBuffer};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;

@@ -3,9 +3,9 @@ use glam::{Mat4, Quat, Vec3};
 /// Stores data unique to each model instance including world position and
 /// rotation.
 pub struct ModelInstance {
-    /// Position of model in world space.
+    /// Model space to world space translation vector.
     pub position: Vec3,
-    /// Rotation of model.
+    /// Model space rotation amount.
     pub rotation: Quat,
 }
 
@@ -82,8 +82,7 @@ struct ModelInstanceRawData {
 
 impl From<&ModelInstance> for ModelInstanceRawData {
     fn from(value: &ModelInstance) -> Self {
-        // TODO(scott): use Mat4::from_rotation_translation(rotation, translation)
-        let xform: Mat4 = Mat4::from_translation(value.position) * Mat4::from_quat(value.rotation);
+        let xform = Mat4::from_rotation_translation(value.rotation, value.position);
 
         ModelInstanceRawData {
             model: xform.to_cols_array_2d(),
