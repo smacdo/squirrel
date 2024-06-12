@@ -149,9 +149,6 @@ impl<'a> Renderer<'a> {
         // have it look at the origin.
         // +y is up
         // +z is out of the screen.
-        //
-        // TODO: This doesn't work on webasm platforms because width/height
-        //       isn't available until after renderer is initialized!
         let camera = Camera::new(
             Vec3::new(0.0, 0.0, 3.0),
             Vec3::new(0.0, 0.0, 0.0),
