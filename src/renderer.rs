@@ -1,3 +1,7 @@
+mod meshes;
+mod shaders;
+mod textures;
+
 use std::time::Duration;
 
 use glam::Vec3;
@@ -7,10 +11,9 @@ use winit::window::Window;
 
 use crate::camera::Camera;
 use crate::gameplay::CameraController;
-use crate::meshes;
-use crate::shaders;
-use crate::shaders::PerModelUniforms;
-use crate::textures::Texture;
+
+use shaders::{PerFrameUniforms, PerModelUniforms};
+use textures::Texture;
 
 /// The renderer is pretty much everything right now while I ramp up on the
 /// wgpu to get a basic 2d/3d prototype up.
@@ -26,10 +29,10 @@ pub struct Renderer<'a> {
     pub index_buffer: wgpu::Buffer,
     pub num_indices: usize,
     pub camera: Camera,
-    pub per_frame_uniforms: shaders::PerFrameUniforms,
-    pub model_uniforms: shaders::PerModelUniforms,
+    pub per_frame_uniforms: PerFrameUniforms,
+    pub model_uniforms: PerModelUniforms,
     /// XXX(scott): This is a temporary demonstration of swapping textures.
-    pub model_uniforms_2: shaders::PerModelUniforms,
+    pub model_uniforms_2: PerModelUniforms,
     pub switch_to_uniform_2: bool,
 
     // TODO(scott): extract gameplay code into separate module.
@@ -162,7 +165,7 @@ impl<'a> Renderer<'a> {
 
         // Create a uniform per-frame buffer to store shader values such as
         // the camera projection matrix.
-        let per_frame_uniforms = shaders::PerFrameUniforms::new(&device);
+        let per_frame_uniforms = PerFrameUniforms::new(&device);
 
         // Load the default shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

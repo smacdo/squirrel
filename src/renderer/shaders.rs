@@ -1,6 +1,6 @@
 use glam::Mat4;
 
-use crate::textures::Texture;
+use super::textures::Texture;
 
 /// Repsonsible for storing per-frame shader uniform values and copying them to
 /// a GPU backed buffer accessible to shaders.

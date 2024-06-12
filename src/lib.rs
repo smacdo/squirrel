@@ -2,9 +2,6 @@
 mod wasm_support;
 
 mod camera;
-mod meshes;
-mod shaders;
-mod textures;
 mod renderer;
 mod gameplay;
 mod platform;
