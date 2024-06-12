@@ -43,9 +43,6 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
     var v: VertexOutput;
 
     v.color = mesh.color;
-    v.color.r *= sin(per_frame.time_elapsed_seconds);
-    v.color.g *= cos(per_frame.time_elapsed_seconds);
-
     v.tex_coords = mesh.tex_coords;
     v.position_cs = per_frame.view_projection * vec4<f32>(mesh.position, 1.0);
 
@@ -55,8 +52,10 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
-    let vert_color = vec4<f32>(in.color, 1.0);
-    let frag_color = tex_color * vert_color;
 
-    return frag_color;
+    // TODO(scott): Re-enable vertex coloring.
+    //let vert_color = vec4<f32>(in.color, 1.0);
+    //let frag_color = tex_color * vert_color;
+
+    return tex_color;
 }

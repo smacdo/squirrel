@@ -1,5 +1,7 @@
 use glam::Mat4;
 
+use crate::textures::Texture;
+
 /// Repsonsible for storing per-frame shader uniform values and copying them to
 /// a GPU backed buffer accessible to shaders.
 #[derive(Debug)]
@@ -99,6 +101,47 @@ struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
     pub time_elapsed_seconds: f32,
     pub _padding: [f32; 3],
+}
+
+/// Responsible for storing per-model shader values used during a model rendering
+/// pass.
+pub struct PerModelUniforms {
+    bind_group: wgpu::BindGroup,
+    _texture: wgpu::Texture,
+}
+
+impl PerModelUniforms {
+    pub fn new(
+        device: &wgpu::Device,
+        per_model_bind_group_layout: &wgpu::BindGroupLayout,
+        texture: Texture,
+    ) -> Self {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("per-model bind group"), // TODO(scott): Append caller specified name
+            layout: per_model_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    // 0: Diffuse texture 2d.
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    // 1: Diffuse texture sampler.
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                },
+            ],
+        });
+
+        Self {
+            bind_group,
+            _texture: texture.texture,
+        }
+    }
+
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
 }
 
 /// Mesh vertex.

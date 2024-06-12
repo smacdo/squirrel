@@ -9,6 +9,7 @@ use crate::camera::Camera;
 use crate::gameplay::CameraController;
 use crate::meshes;
 use crate::shaders;
+use crate::shaders::PerModelUniforms;
 use crate::textures::Texture;
 
 /// The renderer is pretty much everything right now while I ramp up on the
@@ -26,8 +27,10 @@ pub struct Renderer<'a> {
     pub num_indices: usize,
     pub camera: Camera,
     pub per_frame_uniforms: shaders::PerFrameUniforms,
-    pub per_model_bind_group: wgpu::BindGroup, // TODO: Wrap this like PerFrameUniforms!
-    pub texture: wgpu::Texture,
+    pub model_uniforms: shaders::PerModelUniforms,
+    /// XXX(scott): This is a temporary demonstration of swapping textures.
+    pub model_uniforms_2: shaders::PerModelUniforms,
+    pub switch_to_uniform_2: bool,
 
     // TODO(scott): extract gameplay code into separate module.
     pub camera_controller: CameraController,
@@ -110,13 +113,8 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
-        // Load a texture for rendering.
-        let diffuse_bytes = include_bytes!("assets/test.png");
-        let texture =
-            Texture::from_image_bytes(&device, &queue, diffuse_bytes, Some("diffuse texture"))
-                .unwrap();
-
-        // Create a bind group for texture(s) rendering.
+        // Create the per-model bind group layout.
+        // Inputs:
         //  0 - diffuse texture
         //  1 - diffuse sampler
         let per_model_bind_group_layout =
@@ -145,23 +143,6 @@ impl<'a> Renderer<'a> {
                     },
                 ],
             });
-
-        let per_model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("per-model bind group"),
-            layout: &per_model_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    // 0: Diffuse texture 2d.
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    // 1: Diffuse texture sampler.
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                },
-            ],
-        });
 
         // Initialize a default camera.
         // Position it one unit up, and two units back from world origin and
@@ -252,6 +233,31 @@ impl<'a> Renderer<'a> {
         });
         let num_indices = meshes::RECT_INDICES.len();
 
+        // Load textures and other values needed by the model when rendering.
+        let model_uniforms = PerModelUniforms::new(
+            &device,
+            &per_model_bind_group_layout,
+            Texture::from_image_bytes(
+                &device,
+                &queue,
+                include_bytes!("assets/test.png"),
+                Some("diffuse texture"),
+            )
+            .unwrap(),
+        );
+
+        let model_uniforms_2 = PerModelUniforms::new(
+            &device,
+            &per_model_bind_group_layout,
+            Texture::from_image_bytes(
+                &device,
+                &queue,
+                include_bytes!("assets/null.png"),
+                Some("diffuse texture"),
+            )
+            .unwrap(),
+        );
+
         // TODO: Log info like GPU name, etc after creation.
 
         // Initialization (hopefully) complete!
@@ -265,11 +271,12 @@ impl<'a> Renderer<'a> {
             vertex_buffer,
             index_buffer,
             num_indices,
-            per_model_bind_group,
+            model_uniforms,
+            model_uniforms_2,
+            switch_to_uniform_2: false,
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
-            texture: texture.texture,
             camera_controller: CameraController::new(0.2),
             window,
         }
@@ -298,6 +305,20 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+        // XXX(scott): Quick hack to swap demonstrate texture swapping.
+        if let winit::event::WindowEvent::KeyboardInput {
+            event:
+                winit::event::KeyEvent {
+                    physical_key: winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::KeyT),
+                    state: winit::event::ElementState::Pressed,
+                    ..
+                },
+            ..
+        } = event
+        {
+            self.switch_to_uniform_2 = !self.switch_to_uniform_2;
+        }
+
         self.camera_controller.process_input(event)
     }
 
@@ -360,7 +381,15 @@ impl<'a> Renderer<'a> {
             render_pass.set_pipeline(&self.render_pipeline);
 
             render_pass.set_bind_group(0, self.per_frame_uniforms.bind_group(), &[]);
-            render_pass.set_bind_group(1, &self.per_model_bind_group, &[]);
+            render_pass.set_bind_group(
+                1,
+                if self.switch_to_uniform_2 {
+                    self.model_uniforms_2.bind_group()
+                } else {
+                    self.model_uniforms.bind_group()
+                },
+                &[],
+            );
 
             // Bind the mesh's vertex and index buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

@@ -1,6 +1,13 @@
 use anyhow::*;
 use image::GenericImageView;
 
+// TODO: Allow customization of texture parameters either with custom types
+//       or allow passing in of `wgpu::Texture` / `wgpu::Sampler`.
+// TODO: Add ability to change the texture, eg for "reload when changed" functionality.
+// TODO: Add ability to recreate the texture view or sampler on demand, eg for
+//       "reload when changed" functionality.
+
+/// Stores a WGPU texture along with its associated view and sampler.
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -8,6 +15,8 @@ pub struct Texture {
 }
 
 impl Texture {
+    /// Construct a texture represented by `image_bytes` which must be a JPEG,
+    /// PNG or DDS image.
     pub fn from_image_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
