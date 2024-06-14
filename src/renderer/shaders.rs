@@ -1,3 +1,5 @@
+use std::{cell::OnceCell, sync::OnceLock};
+
 use glam::Mat4;
 
 use super::textures::Texture;
@@ -11,7 +13,6 @@ use super::textures::Texture;
 pub struct PerFrameUniforms {
     buffer_data: PerFrameBufferData,
     gpu_buffer: wgpu::Buffer,
-    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 }
 
@@ -33,23 +34,9 @@ impl PerFrameUniforms {
             },
         );
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-frame bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-frame bind group"),
-            layout: &bind_group_layout,
+            layout: &Self::bind_group_layout(device),
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: gpu_buffer.as_entire_binding(),
@@ -59,7 +46,6 @@ impl PerFrameUniforms {
         Self {
             buffer_data,
             gpu_buffer,
-            bind_group_layout,
             bind_group,
         }
     }
@@ -81,16 +67,28 @@ impl PerFrameUniforms {
         queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&[self.buffer_data]))
     }
 
-    /// Get the WGPU bind group layout object which is required when creating a
-    /// new render pipeline layout.
-    pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.bind_group_layout
-    }
-
-    /// Get the WGPU bind group which is required when activating a bind group
-    /// during a render pass.
+    /// Get this object's WGPU bind group.
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
+    }
+
+    /// Gets the bind group layout that describing any instances of `PerFrameUniforms`.
+    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        // TODO(scott): Use OnceLock<wgpu::BindGroupLayout> to create one instance only.
+        //              For some reason this is having trouble on webasm need to investigate.
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-frame bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
     }
 }
 
@@ -112,7 +110,6 @@ struct PerFrameBufferData {
 pub struct PerModelUniforms {
     buffer_data: PerModelBufferData,
     gpu_buffer: wgpu::Buffer,
-    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 }
 
@@ -126,29 +123,15 @@ impl PerModelUniforms {
         let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,
             &wgpu::util::BufferInitDescriptor {
-                label: Some("per-model buffer"),
+                label: Some("per-model buffer"), // TODO(scott): Append caller specified name
                 contents: bytemuck::bytes_of(&buffer_data),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
         );
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-model bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-model bind group"),
-            layout: &bind_group_layout,
+            layout: &Self::bind_group_layout(device),
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: gpu_buffer.as_entire_binding(),
@@ -158,7 +141,6 @@ impl PerModelUniforms {
         Self {
             buffer_data,
             gpu_buffer,
-            bind_group_layout,
             bind_group,
         }
     }
@@ -174,16 +156,28 @@ impl PerModelUniforms {
         queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&[self.buffer_data]))
     }
 
-    /// Get the WGPU bind group layout object which is required when creating a
-    /// new render pipeline layout.
-    pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.bind_group_layout
-    }
-
-    /// Get the WGPU bind group which is required when activating a bind group
-    /// during a render pass.
+    /// Get this object's WGPU bind group.
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
+    }
+
+    /// Gets the bind group layout that describing any instances of `PerModelUniforms`.
+    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        // TODO(scott): Use OnceLock<wgpu::BindGroupLayout> to create one instance only.
+        //              For some reason this is having trouble on webasm need to investigate.
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-model bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
     }
 }
 
@@ -206,14 +200,10 @@ pub struct PerMeshUniforms {
 }
 
 impl PerMeshUniforms {
-    pub fn new(
-        device: &wgpu::Device,
-        per_model_bind_group_layout: &wgpu::BindGroupLayout,
-        texture: Texture,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, texture: Texture) -> Self {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-model bind group"), // TODO(scott): Append caller specified name
-            layout: per_model_bind_group_layout,
+            layout: &Self::bind_group_layout(device),
             entries: &[
                 wgpu::BindGroupEntry {
                     // 0: Diffuse texture 2d.
@@ -234,8 +224,44 @@ impl PerMeshUniforms {
         }
     }
 
+    /// Get this object's WGPU bind group.
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
+    }
+
+    /// Gets the bind group layout that describing any instances of `PerMeshUniforms`.
+    ///
+    /// Bind Group Inputs:
+    ///  0 - diffuse texture
+    ///  1 - diffuse sampler
+    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        // TODO(scott): Use OnceLock<wgpu::BindGroupLayout> to create one instance only.
+        //              For some reason this is having trouble on webasm need to investigate.
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-mesh bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    // 0: Diffuse texture 2d.
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    // 1: Diffuse texture sampler.
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    // This needs to match the filterable field for the texture
+                    // from above.
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        })
     }
 }
 

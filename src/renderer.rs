@@ -120,40 +120,6 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
-        // TODO(scott): I feel like this should be in the PerMesh shader struct?
-        //  eg, `per_frame_uniforms.bind_group_layout()` ??
-        //
-        // Create the per-mesh bind group layout.
-        // Inputs:
-        //  0 - diffuse texture
-        //  1 - diffuse sampler
-        let per_mesh_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("per-mesh bind group layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        // 0: Diffuse texture 2d.
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // 1: Diffuse texture sampler.
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        // This needs to match the filterable field for the texture
-                        // from above.
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
-
         // Initialize a default camera.
         // Position it one unit up, and two units back from world origin and
         // have it look at the origin.
@@ -194,9 +160,9 @@ impl<'a> Renderer<'a> {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    per_frame_uniforms.bind_group_layout(), // TODO: This should be static.
-                    model_uniforms.bind_group_layout(), // TODO: This should be static to swap multiples.
-                    &per_mesh_bind_group_layout,        // TODO: This should be like the above.
+                    &PerFrameUniforms::bind_group_layout(&device),
+                    &PerModelUniforms::bind_group_layout(&device),
+                    &PerMeshUniforms::bind_group_layout(&device),
                 ],
                 push_constant_ranges: &[],
             });
@@ -259,7 +225,6 @@ impl<'a> Renderer<'a> {
         // Load textures and other values needed by the model when rendering.
         let mesh_uniforms = PerMeshUniforms::new(
             &device,
-            &per_mesh_bind_group_layout,
             Texture::from_image_bytes(
                 &device,
                 &queue,
@@ -271,7 +236,6 @@ impl<'a> Renderer<'a> {
 
         let mesh_uniforms_2 = PerMeshUniforms::new(
             &device,
-            &per_mesh_bind_group_layout,
             Texture::from_image_bytes(
                 &device,
                 &queue,
