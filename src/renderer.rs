@@ -5,7 +5,7 @@ mod textures;
 
 use std::time::Duration;
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -13,7 +13,7 @@ use winit::window::Window;
 use crate::camera::Camera;
 use crate::gameplay::CameraController;
 
-use shaders::{PerFrameUniforms, PerModelUniforms};
+use shaders::{PerFrameUniforms, PerMeshUniforms, PerModelUniforms};
 use textures::Texture;
 
 /// The renderer is pretty much everything right now while I ramp up on the
@@ -32,9 +32,12 @@ pub struct Renderer<'a> {
     pub num_indices: usize,
     pub camera: Camera,
     pub per_frame_uniforms: PerFrameUniforms,
+    // TODO: Move PerModelUniforms and PerMeshUniforms into a RenderModel struct?
+    // (probably do this after implementing model loading)
     pub model_uniforms: PerModelUniforms,
+    pub mesh_uniforms: PerMeshUniforms,
     // XXX(scott): BEGIN: This is a temporary demonstration of swapping textures.
-    pub model_uniforms_2: PerModelUniforms,
+    pub mesh_uniforms_2: PerMeshUniforms,
     pub switch_to_uniform_2: bool,
     // XXX(scott): END: This is a temporary demonstration of swapping textures.
     // TODO(scott): extract gameplay code into separate module.
@@ -117,13 +120,16 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
-        // Create the per-model bind group layout.
+        // TODO(scott): I feel like this should be in the PerMesh shader struct?
+        //  eg, `per_frame_uniforms.bind_group_layout()` ??
+        //
+        // Create the per-mesh bind group layout.
         // Inputs:
         //  0 - diffuse texture
         //  1 - diffuse sampler
-        let per_model_bind_group_layout =
+        let per_mesh_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("per-model bind group layout"),
+                label: Some("per-mesh bind group layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         // 0: Diffuse texture 2d.
@@ -175,6 +181,9 @@ impl<'a> Renderer<'a> {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        // Load the default model.
+        let model_uniforms = PerModelUniforms::new(&device);
+
         // Create a depth buffer to ensure fragments are correctly rendered
         // back to front.
         let depth_texture =
@@ -185,8 +194,9 @@ impl<'a> Renderer<'a> {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    per_frame_uniforms.bind_group_layout(),
-                    &per_model_bind_group_layout,
+                    per_frame_uniforms.bind_group_layout(), // TODO: This should be static.
+                    model_uniforms.bind_group_layout(), // TODO: This should be static to swap multiples.
+                    &per_mesh_bind_group_layout,        // TODO: This should be like the above.
                 ],
                 push_constant_ranges: &[],
             });
@@ -247,9 +257,9 @@ impl<'a> Renderer<'a> {
         let num_indices = meshes::RECT_INDICES.len();
 
         // Load textures and other values needed by the model when rendering.
-        let model_uniforms = PerModelUniforms::new(
+        let mesh_uniforms = PerMeshUniforms::new(
             &device,
-            &per_model_bind_group_layout,
+            &per_mesh_bind_group_layout,
             Texture::from_image_bytes(
                 &device,
                 &queue,
@@ -259,9 +269,9 @@ impl<'a> Renderer<'a> {
             .unwrap(),
         );
 
-        let model_uniforms_2 = PerModelUniforms::new(
+        let mesh_uniforms_2 = PerMeshUniforms::new(
             &device,
-            &per_model_bind_group_layout,
+            &per_mesh_bind_group_layout,
             Texture::from_image_bytes(
                 &device,
                 &queue,
@@ -286,7 +296,8 @@ impl<'a> Renderer<'a> {
             index_buffer,
             num_indices,
             model_uniforms,
-            model_uniforms_2,
+            mesh_uniforms,
+            mesh_uniforms_2,
             switch_to_uniform_2: false,
             camera,
             sys_time_elapsed: Default::default(),
@@ -362,25 +373,16 @@ impl<'a> Renderer<'a> {
 
         self.per_frame_uniforms.write_to_gpu(&self.queue);
 
+        // TODO(scott):
+        // For each model, update its per-model uniform buffer.
+        //  ... For each mesh in the model, update its per-mesh uniform buffer.
+
         // Rotate all model instances to demonstrate dynamic updates.
-        let angle = (self.sys_time_elapsed.as_secs_f32() * 25.0).rem_euclid(365.0);
+        let angle = (self.sys_time_elapsed.as_secs_f32() * 12.0).rem_euclid(365.0);
 
-        // TODO(scott): Switch to per-model model transform.
-        /*
-        self.model_instance_buffer
-            .instances_mut()
-            .iter_mut()
-            .for_each(|x| {
-                x.rotation = if x.position == Vec3::ZERO {
-                    Quat::from_axis_angle(Vec3::Z, 0.0)
-                } else {
-                    Quat::from_axis_angle(x.position.normalize(), angle.to_radians())
-                };
-                x.rotation = Quat::IDENTITY;
-            });
-
-        self.model_instance_buffer.write_to_gpu(&self.queue);
-        */
+        self.model_uniforms
+            .set_view_projection(Mat4::from_rotation_y(angle));
+        self.model_uniforms.write_to_gpu(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -431,12 +433,13 @@ impl<'a> Renderer<'a> {
             render_pass.set_pipeline(&self.render_pipeline);
 
             render_pass.set_bind_group(0, self.per_frame_uniforms.bind_group(), &[]);
+            render_pass.set_bind_group(1, self.model_uniforms.bind_group(), &[]);
             render_pass.set_bind_group(
-                1,
+                2,
                 if self.switch_to_uniform_2 {
-                    self.model_uniforms_2.bind_group()
+                    self.mesh_uniforms_2.bind_group()
                 } else {
-                    self.model_uniforms.bind_group()
+                    self.mesh_uniforms.bind_group()
                 },
                 &[],
             );

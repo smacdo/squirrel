@@ -3,6 +3,10 @@ struct PerFrameUniforms {
     time_elapsed_seconds: f32,
 };
 
+struct PerModelUniforms {
+    local_to_world: mat4x4<f32>,
+}
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,
@@ -34,24 +38,22 @@ struct VertexOutput {
 var<uniform> per_frame: PerFrameUniforms;
 
 @group(1) @binding(0)
+var<uniform> per_model: PerModelUniforms;
+
+@group(2) @binding(0)
 var diffuse_texture: texture_2d<f32>;
-@group(1) @binding(1)
+@group(2) @binding(1)
 var diffuse_sampler: sampler;
 
 @vertex
 fn vs_main(mesh: VertexInput) -> VertexOutput {
-    /*let model_view = mat4x4(
-        instance.model_view_c0,
-        instance.model_view_c1,
-        instance.model_view_c2,
-        instance.model_view_c3,
-    );*/
-
     var v: VertexOutput;
 
     v.color = mesh.color;
     v.tex_coords = mesh.tex_coords;
-    v.position_cs = per_frame.view_projection /* * model_view*/ * vec4<f32>(mesh.position, 1.0);
+    v.position_cs = per_frame.view_projection
+        * per_model.local_to_world
+        * vec4<f32>(mesh.position, 1.0);
 
     return v;
 }
