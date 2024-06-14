@@ -1,26 +1,50 @@
+//! NOTES:
+//! Meshes vertex winding order is CCW.
+//! Builtin meshes are ordered bottom left to bottom right.
 use super::shaders::Vertex;
 
-// CCW, bottom left to bottom right.
-/*
+/// A list of meshes that can be constructed by the engine without needing to
+/// load a model externally.
+#[allow(dead_code)]
+pub enum BuiltinMesh {
+    Triangle,
+    Rect,
+    Pentagon,
+}
+
+/// Gets a builtin mesh for use in rendering. All builtin meshes are unit sized,
+/// meaning the vertices in the mesh range from [-1, 1] on the XYZ axis.
+pub fn builtin_mesh(mesh_type: BuiltinMesh) -> (&'static [Vertex], &'static [u16]) {
+    match mesh_type {
+        BuiltinMesh::Triangle => (TRIANGLE_VERTS, TRIANGLE_INDICES),
+        BuiltinMesh::Rect => (RECT_VERTS, RECT_INDICES),
+        BuiltinMesh::Pentagon => (PENTAGON_VERTS, PENTAGON_INDICES),
+    }
+}
+
+#[allow(dead_code)]
 pub const TRIANGLE_VERTS: &[Vertex] = &[
     Vertex {
-        position: [0.0, 0.5, 0.0],
+        position: [0.0, 1.0, 0.0],
         color: [1.0, 0.0, 0.0],
         tex_coords: [0.5, 0.0],
     },
     Vertex {
-        position: [-0.5, -0.5, 0.0],
+        position: [-1.0, -1.0, 0.0],
         color: [0.0, 1.0, 0.0],
         tex_coords: [0.0, 1.0],
     },
     Vertex {
-        position: [0.5, -0.5, 0.0],
+        position: [1.0, -1.0, 0.0],
         color: [0.0, 0.0, 1.0],
         tex_coords: [1.0, 1.0],
     },
 ];
+
+#[allow(dead_code)]
 pub const TRIANGLE_INDICES: &[u16] = &[0, 1, 2];
-*/
+
+#[allow(dead_code)]
 pub const RECT_VERTS: &[Vertex] = &[
     Vertex {
         position: [1.0, 1.0, 0.0],
@@ -43,36 +67,38 @@ pub const RECT_VERTS: &[Vertex] = &[
         tex_coords: [0.0, 1.0],
     },
 ];
+
+#[allow(dead_code)]
 pub const RECT_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
 
-/*
+#[allow(dead_code)]
 pub const PENTAGON_VERTS: &[Vertex] = &[
     Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
+        position: [-0.1736482, 0.984_807_7, 0.0],
         color: [0.5, 0.0, 0.5],
         tex_coords: [0.4131759, 0.99240386],
     }, // A
     Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
+        position: [-0.990_268_1, 0.13917294, 0.0],
         color: [0.5, 0.0, 0.5],
         tex_coords: [0.0048659444, 0.56958647],
     }, // B
     Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
+        position: [-0.43837098, -0.898_794_1, 0.0],
         color: [0.5, 0.0, 0.5],
         tex_coords: [0.28081453, 0.05060294],
     }, // C
     Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
+        position: [0.71933996, -0.6946582, 0.0],
         color: [0.5, 0.0, 0.5],
         tex_coords: [0.85967, 0.1526709],
     }, // D
     Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
+        position: [0.88294744, 0.4694718, 0.0],
         color: [0.5, 0.0, 0.5],
         tex_coords: [0.9414737, 0.7347359],
     }, // E
 ];
 
+#[allow(dead_code)]
 pub const PENTAGON_INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
-*/

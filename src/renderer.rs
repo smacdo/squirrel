@@ -6,6 +6,7 @@ mod textures;
 use std::time::Duration;
 
 use glam::{Mat4, Vec3};
+use meshes::{builtin_mesh, BuiltinMesh};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -13,7 +14,7 @@ use winit::window::Window;
 use crate::camera::Camera;
 use crate::gameplay::CameraController;
 
-use shaders::{PerFrameUniforms, PerMeshUniforms, PerModelUniforms};
+use shaders::{BindGroupLayouts, PerFrameUniforms, PerMeshUniforms, PerModelUniforms};
 use textures::Texture;
 
 /// The renderer is pretty much everything right now while I ramp up on the
@@ -21,6 +22,9 @@ use textures::Texture;
 pub struct Renderer<'a> {
     // TODO(scott): These should not be public, make methods on renderer.
     pub surface: wgpu::Surface<'a>,
+    /// A list of bind group layouts that must be reused each time a bind group
+    /// of that type is created.
+    pub bind_group_layouts: BindGroupLayouts,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub surface_config: wgpu::SurfaceConfiguration,
@@ -120,6 +124,10 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &surface_config);
 
+        // Create the registry of common bind group layouts that must be reused
+        // each time an instance of that bind group is created.
+        let bind_group_layouts = BindGroupLayouts::new(&device);
+
         // Initialize a default camera.
         // Position it one unit up, and two units back from world origin and
         // have it look at the origin.
@@ -139,7 +147,7 @@ impl<'a> Renderer<'a> {
 
         // Create a uniform per-frame buffer to store shader values such as
         // the camera projection matrix.
-        let per_frame_uniforms = PerFrameUniforms::new(&device);
+        let per_frame_uniforms = PerFrameUniforms::new(&device, &bind_group_layouts);
 
         // Load the default shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -148,7 +156,7 @@ impl<'a> Renderer<'a> {
         });
 
         // Load the default model.
-        let model_uniforms = PerModelUniforms::new(&device);
+        let model_uniforms = PerModelUniforms::new(&device, &bind_group_layouts);
 
         // Create a depth buffer to ensure fragments are correctly rendered
         // back to front.
@@ -160,9 +168,9 @@ impl<'a> Renderer<'a> {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &PerFrameUniforms::bind_group_layout(&device),
-                    &PerModelUniforms::bind_group_layout(&device),
-                    &PerMeshUniforms::bind_group_layout(&device),
+                    &bind_group_layouts.per_frame,
+                    &bind_group_layouts.per_model,
+                    &bind_group_layouts.per_mesh,
                 ],
                 push_constant_ranges: &[],
             });
@@ -209,22 +217,24 @@ impl<'a> Renderer<'a> {
         });
 
         // Create a vertex buffer and index for simple meshes.
+        let (vertices, indices) = builtin_mesh(BuiltinMesh::Triangle);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(meshes::RECT_VERTS),
+            contents: bytemuck::cast_slice(vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(meshes::RECT_INDICES),
+            contents: bytemuck::cast_slice(indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = meshes::RECT_INDICES.len();
+        let num_indices = indices.len();
 
         // Load textures and other values needed by the model when rendering.
         let mesh_uniforms = PerMeshUniforms::new(
             &device,
+            &bind_group_layouts,
             Texture::from_image_bytes(
                 &device,
                 &queue,
@@ -236,6 +246,7 @@ impl<'a> Renderer<'a> {
 
         let mesh_uniforms_2 = PerMeshUniforms::new(
             &device,
+            &bind_group_layouts,
             Texture::from_image_bytes(
                 &device,
                 &queue,
@@ -250,6 +261,7 @@ impl<'a> Renderer<'a> {
         // Initialization (hopefully) complete!
         Self {
             surface,
+            bind_group_layouts,
             device,
             queue,
             surface_config,
@@ -342,7 +354,7 @@ impl<'a> Renderer<'a> {
         //  ... For each mesh in the model, update its per-mesh uniform buffer.
 
         // Rotate all model instances to demonstrate dynamic updates.
-        let angle = (self.sys_time_elapsed.as_secs_f32() * 12.0).rem_euclid(365.0);
+        let angle = (self.sys_time_elapsed.as_secs_f32() * 4.0).rem_euclid(180.0) - 90.0;
 
         self.model_uniforms
             .set_view_projection(Mat4::from_rotation_y(angle));

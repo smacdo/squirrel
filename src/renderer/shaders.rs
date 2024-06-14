@@ -18,7 +18,7 @@ pub struct PerFrameUniforms {
 
 impl PerFrameUniforms {
     /// Create a new PerFrameUniforms object that initializes all WGPU resources.
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
         let buffer_data = PerFrameBufferData {
             view_projection: Mat4::IDENTITY,
             time_elapsed_seconds: 0.0,
@@ -36,7 +36,7 @@ impl PerFrameUniforms {
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-frame bind group"),
-            layout: &Self::bind_group_layout(device),
+            layout: &layouts.per_frame,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: gpu_buffer.as_entire_binding(),
@@ -73,10 +73,8 @@ impl PerFrameUniforms {
     }
 
     /// Gets the bind group layout that describing any instances of `PerFrameUniforms`.
-    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        // TODO(scott): Use OnceLock<wgpu::BindGroupLayout> to create one instance only.
-        //              For some reason this is having trouble on webasm need to investigate.
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
             label: Some("per-frame bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -88,7 +86,7 @@ impl PerFrameUniforms {
                 },
                 count: None,
             }],
-        })
+        }
     }
 }
 
@@ -115,7 +113,7 @@ pub struct PerModelUniforms {
 
 impl PerModelUniforms {
     /// Create a new PerModelUniforms object that initializes all WGPU resources.
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
         let buffer_data = PerModelBufferData {
             local_to_world: Mat4::IDENTITY,
         };
@@ -131,7 +129,7 @@ impl PerModelUniforms {
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-model bind group"),
-            layout: &Self::bind_group_layout(device),
+            layout: &layouts.per_model,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: gpu_buffer.as_entire_binding(),
@@ -162,10 +160,8 @@ impl PerModelUniforms {
     }
 
     /// Gets the bind group layout that describing any instances of `PerModelUniforms`.
-    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        // TODO(scott): Use OnceLock<wgpu::BindGroupLayout> to create one instance only.
-        //              For some reason this is having trouble on webasm need to investigate.
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
             label: Some("per-model bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -177,7 +173,7 @@ impl PerModelUniforms {
                 },
                 count: None,
             }],
-        })
+        }
     }
 }
 
@@ -200,10 +196,10 @@ pub struct PerMeshUniforms {
 }
 
 impl PerMeshUniforms {
-    pub fn new(device: &wgpu::Device, texture: Texture) -> Self {
+    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, texture: Texture) -> Self {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-model bind group"), // TODO(scott): Append caller specified name
-            layout: &Self::bind_group_layout(device),
+            layout: &layouts.per_mesh,
             entries: &[
                 wgpu::BindGroupEntry {
                     // 0: Diffuse texture 2d.
@@ -234,10 +230,8 @@ impl PerMeshUniforms {
     /// Bind Group Inputs:
     ///  0 - diffuse texture
     ///  1 - diffuse sampler
-    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        // TODO(scott): Use OnceLock<wgpu::BindGroupLayout> to create one instance only.
-        //              For some reason this is having trouble on webasm need to investigate.
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
             label: Some("per-mesh bind group layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -261,7 +255,24 @@ impl PerMeshUniforms {
                     count: None,
                 },
             ],
-        })
+        }
+    }
+}
+
+/// A registry of bind group layouts used by this renderer.
+pub struct BindGroupLayouts {
+    pub per_frame: wgpu::BindGroupLayout,
+    pub per_model: wgpu::BindGroupLayout,
+    pub per_mesh: wgpu::BindGroupLayout,
+}
+
+impl BindGroupLayouts {
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self {
+            per_frame: device.create_bind_group_layout(&PerFrameUniforms::bind_group_layout_desc()),
+            per_model: device.create_bind_group_layout(&PerModelUniforms::bind_group_layout_desc()),
+            per_mesh: device.create_bind_group_layout(&PerMeshUniforms::bind_group_layout_desc()),
+        }
     }
 }
 
