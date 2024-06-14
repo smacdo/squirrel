@@ -1,5 +1,3 @@
-use std::{cell::OnceCell, sync::OnceLock};
-
 use glam::Mat4;
 
 use super::textures::Texture;
@@ -145,7 +143,7 @@ impl PerModelUniforms {
 
     /// Set local to world transform matrix such that it will be sent to the GPU
     /// the next time `write_to_gpu()` is called.
-    pub fn set_view_projection(&mut self, local_to_world: glam::Mat4) {
+    pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
         self.buffer_data.local_to_world = local_to_world;
     }
 

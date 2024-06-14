@@ -354,11 +354,13 @@ impl<'a> Renderer<'a> {
         //  ... For each mesh in the model, update its per-mesh uniform buffer.
 
         // Rotate all model instances to demonstrate dynamic updates.
-        let angle = (self.sys_time_elapsed.as_secs_f32() * 1.0).rem_euclid(180.0) - 90.0;
-        let angle = 0.0;
+        let angle = self.sys_time_elapsed.as_secs_f32() * 1.5;
 
         self.model_uniforms
-            .set_view_projection(Mat4::from_rotation_y(angle));
+            .set_local_to_world(Mat4::from_axis_angle(
+                Vec3::new(0.5, 1.0, 0.0).normalize(),
+                angle,
+            ));
         self.model_uniforms.write_to_gpu(&self.queue);
     }
 
