@@ -1,19 +1,43 @@
 use glam::{Mat4, Vec3};
 use thiserror::Error;
 
+// TODO: ensure up vector and other assumed unit vectors are actually unit vectors.
+
+/// Camera assumes a right-handed system with the +Z axis going _out_ of the
+/// screen rather than in. This is an arbitrary choice and I decided to use RH
+/// because the abundance of OpenGL tutorials which typically assume RH over LH.
+///
+/// Positive rotations in a right handed system are counterclockwise around the
+/// axis of rotation.
+///
+/// The following transforms points from local space to clip space:
+///  `V_clip = M_projection * M_view * M_model * M_local`
+///
+/// WebGPU defines clip space to be a unit cube with values with the front bottom
+/// left corner as (-1, -1, -1) and the back top right corner (1, 1, 1).
+/// +X faces right, +Y is up and +Z is into the screen.
 pub struct Camera {
+    /// The position of the camera in world space.
     pub eye: Vec3,
+    /// The target position the camera should look at.
     pub target: Vec3,
+    /// A world space direction vector indicating which direction is considered
+    /// straight up.
     pub up: Vec3,
     /// The ratio of the viewport width to its height. An example is if the view
     /// is one unit high and two units wide then the aspect ratio is 2/1.
     pub aspect: f32,
+    /// The vertical field of view for the camera.
     pub fov_y: f32,
+    /// The minimum camera view distance. Fragments closer than `z_near` will not
+    /// be rendered.
     pub z_near: f32,
+    /// The maximum camera view distance. Fragments further than `z_far` will not
+    /// be rendered.
     pub z_far: f32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
 }
-
-// TODO: Switch to LH to match DirectX/Metal popular convention.
 
 impl Camera {
     /// Create a new camera centered at `eye` with the center of the view
@@ -29,32 +53,57 @@ impl Camera {
         fov_y: f32,
         z_near: f32,
         z_far: f32,
-        view_width: u32,
-        view_height: u32,
+        viewport_width: u32,
+        viewport_height: u32,
     ) -> Self {
         Self {
             eye,
             target,
             up,
-            aspect: if view_width > 0 && view_height > 0 {
-                view_width as f32 / view_height as f32
+            aspect: if viewport_width > 0 && viewport_height > 0 {
+                viewport_width as f32 / viewport_height as f32
             } else {
                 0.0
             },
             fov_y,
             z_near,
             z_far,
+            viewport_width: viewport_width as f32,
+            viewport_height: viewport_height as f32,
         }
     }
 
-    /// Get the camera's 4x4 view projection matrix.
-    pub fn view_projection_matrix(&self) -> Mat4 {
-        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let projection = Mat4::perspective_rh(self.fov_y, self.aspect, self.z_near, self.z_far);
-        projection * view
+    /// Get the camera's view matrix.
+    ///
+    /// A view matrix transforms coordinates from world space to view space.
+    /// View space is a coordinate space that can be imagined as the user's view
+    /// into the scene, with the user's eye located at (0, 0, 0) and looking
+    /// down the -Z axis.
+    ///
+    /// View matrices can also be thought of the inverse of the camera's world
+    /// space transform. For instance if a camera is moved backwards 3 units
+    /// then it is the same as moving the scene forward 3 units!
+    pub fn view_matrix(&self) -> Mat4 {
+        Mat4::look_at_rh(self.eye, self.target, self.up)
     }
 
-    /// Resize the camera's viewport size.
+    /// Get the camera's projection matrix.
+    ///
+    /// A projection matrix transforms coordinates from view space to clip space.
+    /// This camera applies a perspective projection to make objects farther from
+    /// the camera appear smaller. Any fragment outside of the viewing frustum
+    /// will not be rendered to the screen.
+    pub fn projection_matrix(&self) -> Mat4 {
+        Mat4::perspective_rh(self.fov_y, self.aspect, self.z_near, self.z_far)
+    }
+
+    /// Get the camera's view projection matrix. The view projection matrix will
+    /// transform points from world space to clip space.
+    pub fn view_projection_matrix(&self) -> Mat4 {
+        self.projection_matrix() * self.view_matrix()
+    }
+
+    /// Resize the camera's viewport.
     pub fn set_viewport_size(
         &mut self,
         new_width: u32,
@@ -62,6 +111,8 @@ impl Camera {
     ) -> Result<(), InvalidCameraSize> {
         if new_width > 0 && new_height > 0 {
             self.aspect = new_width as f32 / new_height as f32;
+            self.viewport_width = new_width as f32;
+            self.viewport_height = new_height as f32;
             Ok(())
         } else {
             Err(InvalidCameraSize(new_width, new_height))

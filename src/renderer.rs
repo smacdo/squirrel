@@ -301,7 +301,7 @@ impl<'a> Renderer<'a> {
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
-            camera_controller: CameraController::new(0.2),
+            camera_controller: CameraController::new(),
             window,
         }
     }
@@ -383,6 +383,7 @@ impl<'a> Renderer<'a> {
                 } else {
                     Quat::from_axis_angle(x.position.normalize(), angle.to_radians())
                 };
+                x.rotation = Quat::IDENTITY;
             });
 
         self.model_instance_buffer.write_to_gpu(&self.queue);

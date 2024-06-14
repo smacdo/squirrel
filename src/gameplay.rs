@@ -1,37 +1,63 @@
 use std::time::Duration;
 
-use winit::{
-    event::{ElementState, WindowEvent},
-    keyboard::{KeyCode, PhysicalKey},
-};
+use glam::{Quat, Vec2};
+use winit::event::{ElementState, WindowEvent};
 
 use crate::camera::Camera;
 
-/// Camera controller is that moves closer/further from the camera target, and
-/// also optionally rotates in a way that's sort of like an orbital camera but
-/// not really.
-///
-/// TODO(scott): Rewrite this as a real orbital camera.
+// NOTE: The camera can be janky when trying to scroll past min/max forward. It
+//       is also prone to weird behavior when vertically panning near to parallel
+//       with the up vector. I thought I worked the math out for the orbital
+//       mechanics and limits, but clearly I need to sit down again to work out
+//       why these behaviors are emerging near the limits despite being clamped.
+
+// TODO(scott): Simple tests for camera controller.
+//  1. Move forward/backward/left/right: is new position, eye expected?
+//  2. Does camera clamp the minimum/maximum forward?
+
+/// Experimental arc-ball camera controller. This controller uses the camera's
+/// target as the pivot point, and allows both rotation and zooming. Zooming is
+/// accomplished with the mouse wheel. Rotation is done by holding the mouse
+/// button down and panning in the direction you wish to rotate.
 pub struct CameraController {
-    /// The number of units this controller moves per second in the direction
-    /// it is facing.
-    speed: f32,
-    move_forward: bool,
-    move_backward: bool,
-    move_left: bool,
-    move_right: bool,
+    /// Horizontal panning speed modifier.
+    horizontal_speed: f32,
+    /// Vertical panning speed modifier.
+    vertical_speed: f32,
+    /// Allows mouse motion to contribute to the camera controller when set to
+    /// true, otherwise mouse motion is ignored.
+    allow_mouse_look: bool,
+    /// Amount of mouse motion this frame encoded as a delta from the last call
+    /// to update.
+    mouse_motion: Option<Vec2>,
+    /// The amount of scroll units that the mouse has moved since the last call
+    /// to update.
+    mouse_scroll: Option<Vec2>,
+    /// A direction modifier to apply to mouse scroll actions. This value should
+    /// be 1.0 or -1.0.
+    scroll_direction_modifier: f32,
+    /// Adjusts the mouse wheel scroll speed by the given amount.
+    scroll_speed_modifier: f32,
+    /// Minimum view distance from target.
+    min_distance: f32,
+    /// Maximum view distance from target.
+    max_distance: Option<f32>,
 }
 
 impl CameraController {
-    /// Create a new camera controller that moves `speed` units per second in the
-    /// direction the camera is facing.
-    pub fn new(speed: f32) -> Self {
+    /// Create a new camera controller that lets users pan and zoom on a pivot
+    /// point.
+    pub fn new() -> Self {
         Self {
-            speed,
-            move_forward: false,
-            move_backward: false,
-            move_left: false,
-            move_right: false,
+            horizontal_speed: 25.0,
+            vertical_speed: 20.0,
+            allow_mouse_look: false,
+            mouse_motion: None,
+            mouse_scroll: None,
+            scroll_direction_modifier: -1.0,
+            scroll_speed_modifier: 25.0,
+            min_distance: 1.0,
+            max_distance: Some(20.0),
         }
     }
 
@@ -40,78 +66,105 @@ impl CameraController {
     /// -wise false is returned.
     pub fn process_input(&mut self, event: &WindowEvent) -> bool {
         match event {
-            WindowEvent::KeyboardInput {
-                event: keyboard_input_event,
+            // Capture mouse input.
+            WindowEvent::MouseInput {
+                button: winit::event::MouseButton::Left,
+                state,
                 ..
             } => {
-                // Is the button pushed down or no longer down?
-                let is_pressed = keyboard_input_event.state == ElementState::Pressed;
-
-                match keyboard_input_event.physical_key {
-                    PhysicalKey::Code(KeyCode::ArrowUp) | PhysicalKey::Code(KeyCode::KeyW) => {
-                        self.move_forward = is_pressed;
-                        true
-                    }
-                    PhysicalKey::Code(KeyCode::ArrowDown) | PhysicalKey::Code(KeyCode::KeyS) => {
-                        self.move_backward = is_pressed;
-                        true
-                    }
-                    PhysicalKey::Code(KeyCode::ArrowLeft) | PhysicalKey::Code(KeyCode::KeyA) => {
-                        self.move_left = is_pressed;
-                        true
-                    }
-                    PhysicalKey::Code(KeyCode::ArrowRight) | PhysicalKey::Code(KeyCode::KeyD) => {
-                        self.move_right = is_pressed;
-                        true
-                    }
-                    _ => false,
-                }
+                self.allow_mouse_look = state == &ElementState::Pressed;
+                true
             }
             _ => false,
         }
     }
 
+    /// Accumulates mouse motion deltas until camera updates are applied in
+    /// `update_camera`.
+    pub fn process_mouse_motion(&mut self, delta: Vec2) {
+        if self.allow_mouse_look {
+            self.mouse_motion = Some(self.mouse_motion.unwrap_or_default() + delta);
+        }
+    }
+
+    /// Accumulates mouse scroll wheel deltas until camera updates are applied in
+    /// `update_camera`.
+    pub fn process_mouse_wheel(&mut self, delta: Vec2) {
+        self.mouse_scroll = Some(self.mouse_scroll.unwrap_or_default() + delta);
+    }
+
     /// Applies updates to the camera that reflect the current state of this
     /// controller.
-    pub fn update_camera(&self, camera: &mut Camera, _delta: Duration) {
-        let forward = camera.target - camera.eye;
-        let forward_dir = forward.normalize();
-        let forward_distance = forward.length();
+    pub fn update_camera(&mut self, camera: &mut Camera, delta: Duration) {
+        let pivot = camera.target;
+        let delta_secs = delta.as_secs_f32();
 
-        // Move camera forward / backward. Take care not to glitch into the
-        // center of the scene.
-        if self.move_forward && forward_distance > self.speed {
-            camera.eye += forward_dir * self.speed;
-        }
-        if self.move_backward {
-            camera.eye -= forward_dir * self.speed;
-        }
+        // Convert the mouse motion to an amount of rotation. The height of the
+        // viewport is 180 degrees, and the width of the viewport is 360 degrees.
+        let x_view_angles = 2.0 * std::f32::consts::PI / camera.viewport_width;
+        let y_view_angles = std::f32::consts::PI / camera.viewport_height;
 
-        // Left/right orbital motion. Recalculate the forward vector and
-        // magnitude to account for forward/backward movement above. Direction
-        // does not need to be re-calculated since forward movement does not
-        // alter direction.
-        let right = forward_dir.cross(camera.up);
-        let forward = camera.target - camera.eye;
-        let forward_distance = forward.length();
+        let x_angle = self.mouse_motion.unwrap_or_default().x
+            * x_view_angles
+            * self.horizontal_speed
+            * delta_secs;
+        let y_angle = self.mouse_motion.unwrap_or_default().y
+            * y_view_angles
+            * self.vertical_speed
+            * delta_secs;
 
-        // When rotating left or right, the distance between the target and eye
-        // needs to be scaled. This keeps the eye positon on the circle made by
-        // the target and eyhe.
-        if self.move_right {
-            camera.eye =
-                camera.target - (forward + right * self.speed).normalize() * forward_distance;
-        }
+        // Rotate camera around the Y axis. (horizontal mouse movement).
+        let x_rotation = Quat::from_axis_angle(camera.up, x_angle);
+        let camera_pos_1 = x_rotation * (camera.eye - pivot) + pivot;
 
-        if self.move_left {
-            camera.eye =
-                camera.target - (forward - right * self.speed).normalize() * forward_distance;
-        }
+        // Regenerate the forward and right vectors after moving the camera.
+        let forward = pivot - camera_pos_1;
+        let right = forward.normalize().cross(camera.up);
 
-        if self.move_right {}
+        // Rotate camera around the X axis (vertical mouse movement).
+        let y_rotation = Quat::from_axis_angle(right, y_angle);
+        let camera_pos_2 = y_rotation * (camera_pos_1 - pivot) + pivot;
+
+        // Do not use the vertical rotation contribution if it causes the
+        // camera to become nearly parallel with the camera's -+ up vector.
+        let forward = (pivot - camera_pos_1).normalize();
+        let cos_angle = forward.dot(camera.up);
+
+        let camera_pos = if cos_angle * y_angle.signum() < 0.99 {
+            // Both horizontal and vertical rotation.
+            camera_pos_2
+        } else {
+            // Only horizontal rotation.
+            camera_pos_1
+        };
+
+        // Move closer or further away from the target if requested by input.
+        let scroll_amount =
+            self.mouse_scroll.unwrap_or_default().x * self.scroll_direction_modifier;
+        let camera_pos =
+            camera_pos - forward * scroll_amount * self.scroll_speed_modifier * delta_secs;
+
+        // Don't scroll too close or too far from the target.
+        let pivot_to_camera = camera_pos - pivot;
+        let distance = pivot_to_camera.length();
+
+        let camera_pos = if distance <= self.min_distance {
+            pivot_to_camera.normalize() * self.min_distance
+        } else if self
+            .max_distance
+            .map_or_else(|| false, |max_distance| distance >= max_distance)
+        {
+            pivot_to_camera.normalize() * self.max_distance.unwrap()
+        } else {
+            camera_pos
+        };
+
+        // Update camera position and target.
+        camera.eye = camera_pos;
+        camera.target = pivot;
+
+        // Reset update state.
+        self.mouse_motion = None;
+        self.mouse_scroll = None;
     }
 }
-
-// TODO(scott): Simple tests for camera controller.
-//  1. Move forward/backward/left/right: is new position, eye expected?
-//  2. Does camera clamp the minimum/maximum forward?

@@ -1,6 +1,5 @@
 use anyhow::*;
 use image::GenericImageView;
-use wgpu::naga::back::msl::sampler;
 
 // TODO: Allow customization of texture parameters either with custom types
 //       or allow passing in of `wgpu::Texture` / `wgpu::Sampler`.

@@ -6,10 +6,12 @@ mod renderer;
 mod gameplay;
 mod platform;
 
+use glam::Vec2;
 use platform::SystemTime;
 use renderer::Renderer;
 use tracing::{info, warn};
 use tracing_log::log::{self, error};
+use wgpu::core::device;
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -144,6 +146,23 @@ pub async fn run_main() {
                             }
                             _ => {}
                         }
+                    }
+                }
+                Event::DeviceEvent { device_id: _device_id, event: device_event } => {
+                    match device_event {
+                        DeviceEvent::MouseMotion { delta } => {
+                            renderer.camera_controller.process_mouse_motion(Vec2 {
+                                x: delta.0 as f32,
+                                y: delta.1 as f32}
+                            )
+                        },
+                        DeviceEvent::MouseWheel { delta: MouseScrollDelta::LineDelta(delta_x, delta_y) } => {
+                            renderer.camera_controller.process_mouse_wheel(Vec2 {
+                                x: delta_y,
+                                y: delta_x
+                            })
+                        },
+                        _ => {}
                     }
                 }
 
