@@ -10,6 +10,7 @@ pub enum BuiltinMesh {
     Triangle,
     Rect,
     Pentagon,
+    Cube,
 }
 
 /// Gets a builtin mesh for use in rendering. All builtin meshes are unit sized,
@@ -19,6 +20,7 @@ pub fn builtin_mesh(mesh_type: BuiltinMesh) -> (&'static [Vertex], &'static [u16
         BuiltinMesh::Triangle => (TRIANGLE_VERTS, TRIANGLE_INDICES),
         BuiltinMesh::Rect => (RECT_VERTS, RECT_INDICES),
         BuiltinMesh::Pentagon => (PENTAGON_VERTS, PENTAGON_INDICES),
+        BuiltinMesh::Cube => (CUBE_VERTS, CUBE_INDICES),
     }
 }
 
@@ -102,3 +104,192 @@ pub const PENTAGON_VERTS: &[Vertex] = &[
 
 #[allow(dead_code)]
 pub const PENTAGON_INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
+
+#[allow(dead_code)]
+pub const CUBE_VERTS: &[Vertex] = &[
+    Vertex {
+        position: [0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, -0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, 0.5, 0.5],
+        color: [1.0, 1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+];
+
+pub const CUBE_INDICES: &[u16] = &[
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+];
