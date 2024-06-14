@@ -50,7 +50,7 @@ impl CameraController {
     pub fn new() -> Self {
         Self {
             horizontal_speed: 25.0,
-            vertical_speed: 20.0,
+            vertical_speed: 25.0,
             allow_mouse_look: false,
             mouse_motion: None,
             mouse_scroll: None,

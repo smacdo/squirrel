@@ -5,8 +5,7 @@ mod textures;
 
 use std::time::Duration;
 
-use glam::{Quat, Vec3};
-use instancing::{spawn_object_instances_as_grid, ModelInstanceBuffer};
+use glam::Vec3;
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -34,18 +33,16 @@ pub struct Renderer<'a> {
     pub camera: Camera,
     pub per_frame_uniforms: PerFrameUniforms,
     pub model_uniforms: PerModelUniforms,
-    /// XXX(scott): This is a temporary demonstration of swapping textures.
+    // XXX(scott): BEGIN: This is a temporary demonstration of swapping textures.
     pub model_uniforms_2: PerModelUniforms,
     pub switch_to_uniform_2: bool,
-    pub model_instance_buffer: ModelInstanceBuffer,
-
+    // XXX(scott): END: This is a temporary demonstration of swapping textures.
     // TODO(scott): extract gameplay code into separate module.
     pub camera_controller: CameraController,
     sys_time_elapsed: std::time::Duration,
-
-    /// XXX(scott): `window` must be the last field in the struct because it needs
-    /// to be dropped after `surface`, because the surface contains unsafe
-    /// references to `window`.
+    // XXX(scott): `window` must be the last field in the struct because it needs
+    // to be dropped after `surface`, because the surface contains unsafe
+    // references to `window`.
     pub window: &'a Window,
 }
 
@@ -200,7 +197,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[shaders::Vertex::desc(), ModelInstanceBuffer::layout_desc()],
+                buffers: &[shaders::Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -274,12 +271,6 @@ impl<'a> Renderer<'a> {
             .unwrap(),
         );
 
-        // Instancing demo!
-        let model_instance_buffer = ModelInstanceBuffer::new(
-            &device,
-            spawn_object_instances_as_grid(10, 10, Vec3::new(5.0, 0.0, 5.0), 45_f32.to_radians()),
-        );
-
         // TODO: Log info like GPU name, etc after creation.
 
         // Initialization (hopefully) complete!
@@ -297,7 +288,6 @@ impl<'a> Renderer<'a> {
             model_uniforms,
             model_uniforms_2,
             switch_to_uniform_2: false,
-            model_instance_buffer,
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
@@ -374,6 +364,9 @@ impl<'a> Renderer<'a> {
 
         // Rotate all model instances to demonstrate dynamic updates.
         let angle = (self.sys_time_elapsed.as_secs_f32() * 25.0).rem_euclid(365.0);
+
+        // TODO(scott): Switch to per-model model transform.
+        /*
         self.model_instance_buffer
             .instances_mut()
             .iter_mut()
@@ -387,6 +380,7 @@ impl<'a> Renderer<'a> {
             });
 
         self.model_instance_buffer.write_to_gpu(&self.queue);
+        */
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -449,16 +443,10 @@ impl<'a> Renderer<'a> {
 
             // Bind the mesh's vertex and index buffers.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.model_instance_buffer.gpu_buffer().slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             // Draw the mesh.
-            //render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
-            render_pass.draw_indexed(
-                0..self.num_indices as u32,
-                0,
-                0..self.model_instance_buffer.instances().len() as _,
-            );
+            render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
         }
 
         // All done - submit commands for execution.

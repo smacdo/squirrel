@@ -18,6 +18,7 @@ pub struct ModelInstance {
 /// matrix transform when submitting updates to the GPU buffer. This means that
 /// values other than translate/rotation/scale cannot be accomodated without
 /// rewriting this implementation.
+#[allow(dead_code)]
 pub struct ModelInstanceBuffer {
     /// A friendly representation of the per-model instance data.
     instances: Vec<ModelInstance>,
@@ -29,6 +30,7 @@ pub struct ModelInstanceBuffer {
 
 impl ModelInstanceBuffer {
     /// Create a new `ModelInstanceBuffer` from the vector of model instances.
+    #[allow(dead_code)]
     pub fn new(device: &wgpu::Device, instances: Vec<ModelInstance>) -> Self {
         let cpu_buffer: Vec<ModelInstanceRawData> =
             instances.iter().map(|m| m.into()).collect::<Vec<_>>();
@@ -50,23 +52,27 @@ impl ModelInstanceBuffer {
 
     /// Get a reference to the wgpu Buffer object representing this model
     /// instance buffer.
+    #[allow(dead_code)]
     pub fn gpu_buffer(&self) -> &wgpu::Buffer {
         &self.gpu_buffer
     }
 
     /// Get a reference to the vector of instances stored in this model instance
     /// buffer.
+    #[allow(dead_code)]
     pub fn instances(&self) -> &[ModelInstance] {
         &self.instances
     }
 
     /// Get a mutable reference to the vector of instances stored in this model
     /// instance buffer.
+    #[allow(dead_code)]
     pub fn instances_mut(&mut self) -> &mut [ModelInstance] {
         &mut self.instances
     }
 
     /// Copy the values in this model instance buffer to the GPU.
+    #[allow(dead_code)]
     pub fn write_to_gpu(&self, queue: &wgpu::Queue) {
         // Copy instance data to CPU data buffer of floats prior to writing it
         // to the GPU.
@@ -88,6 +94,7 @@ impl ModelInstanceBuffer {
 
     /// Get a vertex buffer layout which is used when creating `VertexState`
     /// descriptons for `RenderPipeline`.
+    #[allow(dead_code)]
     pub fn layout_desc() -> wgpu::VertexBufferLayout<'static> {
         // NOTE: The transform matrix is represented in the GPU buffer as 4 vec4
         // column vectors.
@@ -138,6 +145,7 @@ impl From<&ModelInstance> for ModelInstanceRawData {
 
 /// A helper method that creates an NxM grid of model instances suitable for use
 /// in `ModelInstanceBuffer`.
+#[allow(dead_code)]
 pub fn spawn_object_instances_as_grid(
     num_rows: usize,
     instances_per_row: usize,

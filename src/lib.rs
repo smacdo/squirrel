@@ -11,7 +11,6 @@ use platform::SystemTime;
 use renderer::Renderer;
 use tracing::{info, warn};
 use tracing_log::log::{self, error};
-use wgpu::core::device;
 use winit::{
     event::*,
     event_loop::EventLoop,
