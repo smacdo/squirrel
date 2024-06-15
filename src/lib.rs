@@ -6,6 +6,7 @@ mod renderer;
 mod gameplay;
 mod platform;
 
+use gameplay::CameraController;
 use glam::Vec2;
 use platform::SystemTime;
 use renderer::Renderer;

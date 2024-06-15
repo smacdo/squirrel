@@ -13,8 +13,8 @@ use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::camera::Camera;
-use crate::gameplay::CameraController;
+use crate::gameplay::{ArcballCameraController, FreeLookCameraController};
+use crate::{camera::Camera, gameplay::CameraController};
 
 use shaders::{BindGroupLayouts, PerFrameUniforms};
 use textures::Texture;
@@ -51,7 +51,7 @@ pub struct Renderer<'a> {
     pub mesh: Arc<Mesh>,
     pub models: Vec<Model>,
     // TODO(scott): extract gameplay code into separate module.
-    pub camera_controller: CameraController,
+    pub camera_controller: FreeLookCameraController,
     sys_time_elapsed: std::time::Duration,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
@@ -282,7 +282,7 @@ impl<'a> Renderer<'a> {
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
-            camera_controller: CameraController::new(),
+            camera_controller: FreeLookCameraController::new(),
             window,
         }
     }

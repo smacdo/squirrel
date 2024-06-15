@@ -19,7 +19,11 @@ pub struct Camera {
     eye: Vec3,
     /// The target position the camera should look at.
     target: Vec3,
-    /// The camera's up direction.
+    /// The camera's forward axis.
+    forward: Vec3,
+    /// The camera's right axis.
+    right: Vec3,
+    /// The camera's up axis.
     up: Vec3,
     /// A world space direction vector indicating which direction is considered
     /// straight up.
@@ -63,10 +67,12 @@ impl Camera {
 
         let up = up.normalize();
 
-        Self {
-            eye,
-            target,
-            up,
+        let mut camera = Self {
+            eye: Default::default(),
+            target: Default::default(),
+            forward: Default::default(),
+            right: Default::default(),
+            up: Default::default(),
             world_up: up,
             aspect: if viewport_width > 0 && viewport_height > 0 {
                 viewport_width as f32 / viewport_height as f32
@@ -78,7 +84,10 @@ impl Camera {
             z_far,
             viewport_width: viewport_width as f32,
             viewport_height: viewport_height as f32,
-        }
+        };
+
+        camera.reorient(eye, target);
+        camera
     }
 
     /// Reorient the camera to be located at `eye` and look at `target`. Both
@@ -100,8 +109,15 @@ impl Camera {
         let new_right = Vec3::cross(self.world_up, new_direction).normalize();
         let new_up = Vec3::cross(new_direction, new_right);
 
+        self.forward = -new_direction;
+        self.right = new_right;
         self.up = new_up;
-        // TODO: store the right vector?
+    }
+
+    /// Set the camera's vertical field of view.
+    pub fn set_fov_y(&mut self, fov_y: f32) {
+        assert!(fov_y > 0.0);
+        self.fov_y = fov_y;
     }
 
     /// Get the camera's view matrix.
@@ -158,6 +174,16 @@ impl Camera {
     /// Get the point at which the camera is focused on.
     pub fn target(&self) -> Vec3 {
         self.target
+    }
+
+    /// Get the camera's forward axis.
+    pub fn forward(&self) -> Vec3 {
+        self.forward
+    }
+
+    /// Get the camera's right axis.
+    pub fn right(&self) -> Vec3 {
+        self.right
     }
 
     /// Get the camera's up axis.
