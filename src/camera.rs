@@ -1,8 +1,6 @@
 use glam::{Mat4, Vec3};
 use thiserror::Error;
 
-// TODO: ensure up vector and other assumed unit vectors are actually unit vectors.
-
 /// Camera assumes a right-handed system with the +Z axis going _out_ of the
 /// screen rather than in. This is an arbitrary choice and I decided to use RH
 /// because the abundance of OpenGL tutorials which typically assume RH over LH.
@@ -18,25 +16,27 @@ use thiserror::Error;
 /// +X faces right, +Y is up and +Z is into the screen.
 pub struct Camera {
     /// The position of the camera in world space.
-    pub eye: Vec3,
+    eye: Vec3,
     /// The target position the camera should look at.
-    pub target: Vec3,
+    target: Vec3,
+    /// The camera's up direction.
+    up: Vec3,
     /// A world space direction vector indicating which direction is considered
     /// straight up.
-    pub up: Vec3,
+    world_up: Vec3,
     /// The ratio of the viewport width to its height. An example is if the view
     /// is one unit high and two units wide then the aspect ratio is 2/1.
-    pub aspect: f32,
+    aspect: f32,
     /// The vertical field of view for the camera.
-    pub fov_y: f32,
+    fov_y: f32,
     /// The minimum camera view distance. Fragments closer than `z_near` will not
     /// be rendered.
-    pub z_near: f32,
+    z_near: f32,
     /// The maximum camera view distance. Fragments further than `z_far` will not
     /// be rendered.
-    pub z_far: f32,
-    pub viewport_width: f32,
-    pub viewport_height: f32,
+    z_far: f32,
+    viewport_width: f32,
+    viewport_height: f32,
 }
 
 impl Camera {
@@ -56,10 +56,18 @@ impl Camera {
         viewport_width: u32,
         viewport_height: u32,
     ) -> Self {
+        assert!(fov_y > 0.0);
+        assert!(z_near >= 0.0);
+        assert!(z_far > z_near);
+        assert!(eye != target);
+
+        let up = up.normalize();
+
         Self {
             eye,
             target,
             up,
+            world_up: up,
             aspect: if viewport_width > 0 && viewport_height > 0 {
                 viewport_width as f32 / viewport_height as f32
             } else {
@@ -71,6 +79,29 @@ impl Camera {
             viewport_width: viewport_width as f32,
             viewport_height: viewport_height as f32,
         }
+    }
+
+    /// Reorient the camera to be located at `eye` and look at `target`. Both
+    /// points are should be in world space.
+    ///
+    /// Calling `reorient` will rebuild the camera's local coordinate system
+    /// using the Gram-Schimdt process.
+    pub fn reorient(&mut self, new_eye: Vec3, new_target: Vec3) {
+        self.eye = new_eye;
+        self.target = new_target;
+
+        // NOTE: This direction is technically the _opposite_ of the camera's
+        // facing direction (it goes from target to eye rather than eye to target).
+        //
+        // This is because the view matrix's coordinate system Z axis is positive
+        // but by OpenGL convention the camera points towards the negative Z
+        // axis.
+        let new_direction = (self.eye - self.target).normalize();
+        let new_right = Vec3::cross(self.world_up, new_direction).normalize();
+        let new_up = Vec3::cross(new_direction, new_right);
+
+        self.up = new_up;
+        // TODO: store the right vector?
     }
 
     /// Get the camera's view matrix.
@@ -117,6 +148,36 @@ impl Camera {
         } else {
             Err(InvalidCameraSize(new_width, new_height))
         }
+    }
+
+    /// Get the position of the camera in world space.
+    pub fn eye(&self) -> Vec3 {
+        self.eye
+    }
+
+    /// Get the point at which the camera is focused on.
+    pub fn target(&self) -> Vec3 {
+        self.target
+    }
+
+    /// Get the camera's up axis.
+    pub fn up(&self) -> Vec3 {
+        self.up
+    }
+
+    /// Get the camera viewport width in pixels.
+    pub fn viewport_width(&self) -> f32 {
+        self.viewport_width
+    }
+
+    /// Get the camera viewport height in pixels.
+    pub fn viewport_height(&self) -> f32 {
+        self.viewport_height
+    }
+
+    /// Get the world up axis (not the camera's up axis).
+    pub fn world_up(&self) -> Vec3 {
+        self.world_up
     }
 }
 

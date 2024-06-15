@@ -62,19 +62,15 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
-
-    // TODO(scott): Re-enable vertex coloring.
-    //let vert_color = vec4<f32>(in.color, 1.0);
-    //let frag_color = tex_color * vert_color;
-
-    let final_color = tex_color;
+    let vert_color = vec4<f32>(in.color, 1.0);
+    let frag_color = tex_color * vert_color;
 
     // Should the color be converted from linear to sRGB in the pixel shader?
     // Otherwise simply return it in lienar space.
     if (per_frame.output_is_srgb == 0) {
-        return from_linear_rgb(final_color);
+        return from_linear_rgb(frag_color);
     } else {
-        return final_color;
+        return frag_color;
     }
 }
 

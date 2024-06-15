@@ -96,13 +96,13 @@ impl CameraController {
     /// Applies updates to the camera that reflect the current state of this
     /// controller.
     pub fn update_camera(&mut self, camera: &mut Camera, delta: Duration) {
-        let pivot = camera.target;
+        let pivot = camera.target();
         let delta_secs = delta.as_secs_f32();
 
         // Convert the mouse motion to an amount of rotation. The height of the
         // viewport is 180 degrees, and the width of the viewport is 360 degrees.
-        let x_view_angles = 2.0 * std::f32::consts::PI / camera.viewport_width;
-        let y_view_angles = std::f32::consts::PI / camera.viewport_height;
+        let x_view_angles = 2.0 * std::f32::consts::PI / camera.viewport_width();
+        let y_view_angles = std::f32::consts::PI / camera.viewport_height();
 
         let x_angle = self.mouse_motion.unwrap_or_default().x
             * x_view_angles
@@ -114,12 +114,12 @@ impl CameraController {
             * delta_secs;
 
         // Rotate camera around the Y axis. (horizontal mouse movement).
-        let x_rotation = Quat::from_axis_angle(camera.up, x_angle);
-        let camera_pos_1 = x_rotation * (camera.eye - pivot) + pivot;
+        let x_rotation = Quat::from_axis_angle(camera.up(), x_angle);
+        let camera_pos_1 = x_rotation * (camera.eye() - pivot) + pivot;
 
         // Regenerate the forward and right vectors after moving the camera.
         let forward = pivot - camera_pos_1;
-        let right = forward.normalize().cross(camera.up);
+        let right = forward.normalize().cross(camera.up());
 
         // Rotate camera around the X axis (vertical mouse movement).
         let y_rotation = Quat::from_axis_angle(right, y_angle);
@@ -128,7 +128,7 @@ impl CameraController {
         // Do not use the vertical rotation contribution if it causes the
         // camera to become nearly parallel with the camera's -+ up vector.
         let forward = (pivot - camera_pos_1).normalize();
-        let cos_angle = forward.dot(camera.up);
+        let cos_angle = forward.dot(camera.world_up());
 
         let camera_pos = if cos_angle * y_angle.signum() < 0.99 {
             // Both horizontal and vertical rotation.
@@ -160,8 +160,7 @@ impl CameraController {
         };
 
         // Update camera position and target.
-        camera.eye = camera_pos;
-        camera.target = pivot;
+        camera.reorient(camera_pos, pivot);
 
         // Reset update state.
         self.mouse_motion = None;
