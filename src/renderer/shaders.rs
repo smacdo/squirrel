@@ -4,6 +4,7 @@ use super::textures::Texture;
 
 // TODO: Refactor into a trait or some other reusable functionality because there
 //       is a lot of overlap between PerFrameUniforms and PerModelUniforms?
+// TODO: Use dirty flag to alert when forgetting to update prior to draw.
 
 /// Repsonsible for storing per-frame shader uniform values and copying them to
 /// a GPU backed buffer accessible to shaders.
@@ -20,7 +21,8 @@ impl PerFrameUniforms {
         let buffer_data = PerFrameBufferData {
             view_projection: Mat4::IDENTITY,
             time_elapsed_seconds: 0.0,
-            _padding: [0.0; 3],
+            output_is_srgb: 0,
+            _padding: [0.0; 2],
         };
 
         let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -60,6 +62,11 @@ impl PerFrameUniforms {
         self.buffer_data.time_elapsed_seconds = time_elapsed.as_secs_f32();
     }
 
+    /// Set if the output backbuffer format is SRGB or not.
+    pub fn set_output_is_srgb(&mut self, is_srgb: bool) {
+        self.buffer_data.output_is_srgb = if is_srgb { 1 } else { 0 };
+    }
+
     /// Copy per frame uniform values from this structure to the GPU.
     pub fn write_to_gpu(&self, queue: &wgpu::Queue) {
         queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&[self.buffer_data]))
@@ -97,7 +104,8 @@ impl PerFrameUniforms {
 struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
     pub time_elapsed_seconds: f32,
-    pub _padding: [f32; 3],
+    pub output_is_srgb: u32,
+    pub _padding: [f32; 2],
 }
 
 /// Repsonsible for storing per-model shader uniform values and copying them to

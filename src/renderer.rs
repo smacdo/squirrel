@@ -153,7 +153,8 @@ impl<'a> Renderer<'a> {
 
         // Create a uniform per-frame buffer to store shader values such as
         // the camera projection matrix.
-        let per_frame_uniforms = PerFrameUniforms::new(&device, &bind_group_layouts);
+        let mut per_frame_uniforms = PerFrameUniforms::new(&device, &bind_group_layouts);
+        per_frame_uniforms.set_output_is_srgb(surface_format.is_srgb());
 
         // Load the default shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
