@@ -188,16 +188,15 @@ struct PerModelBufferData {
 
 /// Responsible for storing per-model shader values used during a model rendering
 /// pass.
-pub struct PerMeshUniforms {
+pub struct PerSubmeshUniforms {
     bind_group: wgpu::BindGroup,
-    _texture: wgpu::Texture,
 }
 
-impl PerMeshUniforms {
+impl PerSubmeshUniforms {
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, texture: Texture) -> Self {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-model bind group"), // TODO(scott): Append caller specified name
-            layout: &layouts.per_mesh,
+            layout: &layouts.per_submesh,
             entries: &[
                 wgpu::BindGroupEntry {
                     // 0: Diffuse texture 2d.
@@ -212,10 +211,7 @@ impl PerMeshUniforms {
             ],
         });
 
-        Self {
-            bind_group,
-            _texture: texture.texture,
-        }
+        Self { bind_group }
     }
 
     /// Get this object's WGPU bind group.
@@ -261,7 +257,7 @@ impl PerMeshUniforms {
 pub struct BindGroupLayouts {
     pub per_frame: wgpu::BindGroupLayout,
     pub per_model: wgpu::BindGroupLayout,
-    pub per_mesh: wgpu::BindGroupLayout,
+    pub per_submesh: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -269,7 +265,8 @@ impl BindGroupLayouts {
         Self {
             per_frame: device.create_bind_group_layout(&PerFrameUniforms::bind_group_layout_desc()),
             per_model: device.create_bind_group_layout(&PerModelUniforms::bind_group_layout_desc()),
-            per_mesh: device.create_bind_group_layout(&PerMeshUniforms::bind_group_layout_desc()),
+            per_submesh: device
+                .create_bind_group_layout(&PerSubmeshUniforms::bind_group_layout_desc()),
         }
     }
 }

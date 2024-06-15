@@ -1,12 +1,14 @@
 mod instancing;
 mod meshes;
+mod models;
 mod shaders;
 mod textures;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use glam::{Mat4, Vec3};
+use glam::{Quat, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
+use models::{DrawModel, Mesh, Model, Submesh};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
@@ -14,8 +16,21 @@ use winit::window::Window;
 use crate::camera::Camera;
 use crate::gameplay::CameraController;
 
-use shaders::{BindGroupLayouts, PerFrameUniforms, PerMeshUniforms, PerModelUniforms};
+use shaders::{BindGroupLayouts, PerFrameUniforms};
 use textures::Texture;
+
+const INITIAL_CUBE_POS: &[Vec3] = &[
+    Vec3::new(0.0, 0.0, 0.0),
+    Vec3::new(2.0, 5.0, -15.0),
+    Vec3::new(-1.5, -2.2, -2.5),
+    Vec3::new(-3.8, -2.0, -12.3),
+    Vec3::new(2.4, -0.4, -3.5),
+    Vec3::new(-1.7, 3.0, 7.5),
+    Vec3::new(1.3, -2.0, -2.5),
+    Vec3::new(1.5, 2.0, -2.5),
+    Vec3::new(1.5, 0.2, -1.5),
+    Vec3::new(-1.3, 1.0, -1.5),
+];
 
 /// The renderer is pretty much everything right now while I ramp up on the
 /// wgpu to get a basic 2d/3d prototype up.
@@ -31,19 +46,10 @@ pub struct Renderer<'a> {
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub depth_texture: Texture,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub num_indices: usize,
     pub camera: Camera,
     pub per_frame_uniforms: PerFrameUniforms,
-    // TODO: Move PerModelUniforms and PerMeshUniforms into a RenderModel struct?
-    // (probably do this after implementing model loading)
-    pub model_uniforms: PerModelUniforms,
-    pub mesh_uniforms: PerMeshUniforms,
-    // XXX(scott): BEGIN: This is a temporary demonstration of swapping textures.
-    pub mesh_uniforms_2: PerMeshUniforms,
-    pub switch_to_uniform_2: bool,
-    // XXX(scott): END: This is a temporary demonstration of swapping textures.
+    pub mesh: Arc<Mesh>,
+    pub models: Vec<Model>,
     // TODO(scott): extract gameplay code into separate module.
     pub camera_controller: CameraController,
     sys_time_elapsed: std::time::Duration,
@@ -155,9 +161,6 @@ impl<'a> Renderer<'a> {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        // Load the default model.
-        let model_uniforms = PerModelUniforms::new(&device, &bind_group_layouts);
-
         // Create a depth buffer to ensure fragments are correctly rendered
         // back to front.
         let depth_texture =
@@ -170,7 +173,7 @@ impl<'a> Renderer<'a> {
                 bind_group_layouts: &[
                     &bind_group_layouts.per_frame,
                     &bind_group_layouts.per_model,
-                    &bind_group_layouts.per_mesh,
+                    &bind_group_layouts.per_submesh,
                 ],
                 push_constant_ranges: &[],
             });
@@ -217,44 +220,49 @@ impl<'a> Renderer<'a> {
         });
 
         // Create a vertex buffer and index for simple meshes.
+        // TODO(scott): Encapsulate this into a struct?
+
+        // Generate a cube mesh and then spawn multiple instances of it for rendering.
         let (vertices, indices) = builtin_mesh(BuiltinMesh::Cube);
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-        let num_indices = indices.len();
-
-        // Load textures and other values needed by the model when rendering.
-        let mesh_uniforms = PerMeshUniforms::new(
-            &device,
-            &bind_group_layouts,
-            Texture::from_image_bytes(
+        let cube_mesh = Arc::new(Mesh::new(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Cube Vertex Buffer"),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Cube Index Buffer"),
+                contents: bytemuck::cast_slice(indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }),
+            indices.len() as u32,
+            vec![Submesh::new(
                 &device,
-                &queue,
-                include_bytes!("assets/test.png"),
-                Some("diffuse texture"),
-            )
-            .unwrap(),
-        );
+                &bind_group_layouts,
+                0..indices.len() as u32,
+                0,
+                Texture::from_image_bytes(
+                    &device,
+                    &queue,
+                    include_bytes!("assets/test.png"),
+                    Some("diffuse texture"),
+                )
+                .unwrap(),
+            )],
+        ));
 
-        let mesh_uniforms_2 = PerMeshUniforms::new(
-            &device,
-            &bind_group_layouts,
-            Texture::from_image_bytes(
+        let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
+
+        for initial_pos in INITIAL_CUBE_POS {
+            models.push(Model::new(
                 &device,
-                &queue,
-                include_bytes!("assets/null.png"),
-                Some("diffuse texture"),
-            )
-            .unwrap(),
-        );
+                &bind_group_layouts,
+                *initial_pos,
+                Quat::IDENTITY,
+                cube_mesh.clone(),
+            ));
+        }
 
         // TODO: Log info like GPU name, etc after creation.
 
@@ -268,13 +276,8 @@ impl<'a> Renderer<'a> {
             window_size,
             depth_texture,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
-            model_uniforms,
-            mesh_uniforms,
-            mesh_uniforms_2,
-            switch_to_uniform_2: false,
+            mesh: cube_mesh,
+            models,
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
@@ -315,20 +318,6 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        // XXX(scott): Quick hack to swap demonstrate texture swapping.
-        if let winit::event::WindowEvent::KeyboardInput {
-            event:
-                winit::event::KeyEvent {
-                    physical_key: winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::KeyT),
-                    state: winit::event::ElementState::Pressed,
-                    ..
-                },
-            ..
-        } = event
-        {
-            self.switch_to_uniform_2 = !self.switch_to_uniform_2;
-        }
-
         self.camera_controller.process_input(event)
     }
 
@@ -349,19 +338,16 @@ impl<'a> Renderer<'a> {
 
         self.per_frame_uniforms.write_to_gpu(&self.queue);
 
-        // TODO(scott):
-        // For each model, update its per-model uniform buffer.
-        //  ... For each mesh in the model, update its per-mesh uniform buffer.
-
-        // Rotate all model instances to demonstrate dynamic updates.
+        // Update uniforms for each model that will be rendered.
         let angle = self.sys_time_elapsed.as_secs_f32() * 1.5;
 
-        self.model_uniforms
-            .set_local_to_world(Mat4::from_axis_angle(
+        for model in &mut self.models.iter_mut() {
+            model.set_rotation(Quat::from_axis_angle(
                 Vec3::new(0.5, 1.0, 0.0).normalize(),
                 angle,
             ));
-        self.model_uniforms.write_to_gpu(&self.queue);
+            model.update_gpu(&self.queue);
+        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -375,10 +361,8 @@ impl<'a> Renderer<'a> {
                     label: Some("Render loop encoder"),
                 });
 
-        // Draw a simple triangle.
+        // Draw all models in the scene.
         {
-            // Prepare the default rendering pipeline for drawing a mesh.
-
             let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -410,25 +394,11 @@ impl<'a> Renderer<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-
             render_pass.set_bind_group(0, self.per_frame_uniforms.bind_group(), &[]);
-            render_pass.set_bind_group(1, self.model_uniforms.bind_group(), &[]);
-            render_pass.set_bind_group(
-                2,
-                if self.switch_to_uniform_2 {
-                    self.mesh_uniforms_2.bind_group()
-                } else {
-                    self.mesh_uniforms.bind_group()
-                },
-                &[],
-            );
 
-            // Bind the mesh's vertex and index buffers.
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-            // Draw the mesh.
-            render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
+            for model in self.models.iter() {
+                render_pass.draw_model(model);
+            }
         }
 
         // All done - submit commands for execution.
