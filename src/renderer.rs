@@ -1,3 +1,4 @@
+mod debug_state;
 mod instancing;
 mod meshes;
 mod models;
@@ -8,6 +9,7 @@ mod uniforms_buffers;
 
 use std::{sync::Arc, time::Duration};
 
+use debug_state::DebugState;
 use glam::{Quat, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
@@ -15,8 +17,6 @@ use shaders::{BindGroupLayouts, PerFrameUniforms};
 use tracing::{info, warn};
 use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
-use winit::event::{ElementState, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
 use crate::gameplay::ArcballCameraController;
@@ -40,25 +40,20 @@ const INITIAL_CUBE_POS: &[Vec3] = &[
 /// The renderer is pretty much everything right now while I ramp up on the
 /// wgpu to get a basic 2d/3d prototype up.
 pub struct Renderer<'a> {
-    // TODO(scott): These should not be public, make methods on renderer.
-    pub surface: wgpu::Surface<'a>,
-    /// A list of bind group layouts that must be reused each time a bind group
-    /// of that type is created.
-    pub bind_group_layouts: BindGroupLayouts,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub surface_config: wgpu::SurfaceConfiguration,
-    pub window_size: winit::dpi::PhysicalSize<u32>,
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub camera: Camera,
-    pub per_frame_uniforms: PerFrameUniforms,
-    pub mesh: Arc<Mesh>,
-    pub models: Vec<Model>,
-    // TODO(scott): extract gameplay code into separate module.
-    pub camera_controller: ArcballCameraController,
-    sys_time_elapsed: std::time::Duration,
+    surface: wgpu::Surface<'a>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_config: wgpu::SurfaceConfiguration,
+    window_size: winit::dpi::PhysicalSize<u32>,
+    render_pipeline: wgpu::RenderPipeline,
+    per_frame_uniforms: PerFrameUniforms,
     depth_pass: passes::DepthPass,
-    visualize_depth_pass: bool,
+    sys_time_elapsed: std::time::Duration,
+    debug_state: DebugState,
+    // TODO(scott): extract gameplay code into separate module.
+    pub camera: Camera,
+    pub camera_controller: ArcballCameraController,
+    models: Vec<Model>,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
     // references to `window`.
@@ -70,6 +65,7 @@ pub struct Renderer<'a> {
 impl<'a> Renderer<'a> {
     pub async fn new(window: &'a Window) -> Self {
         let window_size = window.inner_size();
+        info!("initial renderer size: {:?}", window_size);
 
         // Create a WGPU instance that can use any supported graphics API.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -146,7 +142,6 @@ impl<'a> Renderer<'a> {
         // +y is up
         // +z is out of the screen.
         let camera = Camera::new(
-            //Vec3::new(0.0, 0.0, 3.0),
             Vec3::new(0.0, 5.0, 10.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
@@ -221,9 +216,6 @@ impl<'a> Renderer<'a> {
             multiview: None,
         });
 
-        // Create a vertex buffer and index for simple meshes.
-        // TODO(scott): Encapsulate this into a struct?
-
         // Generate a cube mesh and then spawn multiple instances of it for rendering.
         let (vertices, indices) = builtin_mesh(BuiltinMesh::Cube);
 
@@ -269,25 +261,21 @@ impl<'a> Renderer<'a> {
         // Set up depth buffer and a visualization for the depth buffer.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);
 
-        // TODO: Log info like GPU name, etc after creation.
-
         // Initialization (hopefully) complete!
         Self {
             surface,
-            bind_group_layouts,
             device,
             queue,
             surface_config,
             window_size,
             render_pipeline,
-            mesh: cube_mesh,
             models,
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
             camera_controller: ArcballCameraController::new(),
             depth_pass,
-            visualize_depth_pass: false,
+            debug_state: Default::default(),
             window,
         }
     }
@@ -320,23 +308,10 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        if let WindowEvent::KeyboardInput {
-            event: keyboard_input_event,
-            ..
-        } = event
-        {
-            if keyboard_input_event.state == ElementState::Released {
-                if let PhysicalKey::Code(KeyCode::KeyZ) = keyboard_input_event.physical_key {
-                    self.visualize_depth_pass = !self.visualize_depth_pass;
-                }
-            }
-        }
-
+        self.debug_state.process_input(event);
         self.camera_controller.process_input(event)
     }
 
-    // TODO(scott): update should get a delta time, and pass the delta time to
-    // the camera controller.
     pub fn update(&mut self, delta: Duration) {
         // Allow camera controoler to control the scene's camera.
         self.camera_controller
@@ -418,7 +393,7 @@ impl<'a> Renderer<'a> {
         }
 
         // Depth pass visualization.
-        if self.visualize_depth_pass {
+        if self.debug_state.visualize_depth_pass {
             self.depth_pass.draw(&view, &mut command_encoder);
         }
 

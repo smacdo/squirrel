@@ -54,9 +54,7 @@ pub async fn run_main() {
     // Initialize the renderer.
     log::info!("creating render window");
     let mut renderer = Renderer::new(&main_window).await;
-
-    log::info!("initial renderer window size: {:?}", renderer.window_size);
-
+    
     // Main window event loop.
     //
     // NOTE: Window events are first sent to a custom input processer, and only
