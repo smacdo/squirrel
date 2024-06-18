@@ -1,6 +1,7 @@
 mod instancing;
 mod meshes;
 mod models;
+mod passes;
 mod shaders;
 mod textures;
 
@@ -11,9 +12,11 @@ use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
+use winit::event::{ElementState, WindowEvent};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
-use crate::gameplay::{ArcballCameraController, FreeLookCameraController};
+use crate::gameplay::ArcballCameraController;
 use crate::{camera::Camera, gameplay::CameraController};
 
 use shaders::{BindGroupLayouts, PerFrameUniforms};
@@ -44,15 +47,16 @@ pub struct Renderer<'a> {
     pub queue: wgpu::Queue,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub window_size: winit::dpi::PhysicalSize<u32>,
-    pub depth_texture: Texture,
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera: Camera,
     pub per_frame_uniforms: PerFrameUniforms,
     pub mesh: Arc<Mesh>,
     pub models: Vec<Model>,
     // TODO(scott): extract gameplay code into separate module.
-    pub camera_controller: FreeLookCameraController,
+    pub camera_controller: ArcballCameraController,
     sys_time_elapsed: std::time::Duration,
+    depth_pass: passes::DepthPass,
+    visualize_depth_pass: bool,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
     // references to `window`.
@@ -162,11 +166,6 @@ impl<'a> Renderer<'a> {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        // Create a depth buffer to ensure fragments are correctly rendered
-        // back to front.
-        let depth_texture =
-            Texture::create_depth_texture(&device, &surface_config, Some("depth buffer"));
-
         // Create the default render pipeline layout and render pipeline objects.
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -206,7 +205,7 @@ impl<'a> Renderer<'a> {
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: Texture::DEPTH_TEXTURE_FORMAT,
+                format: passes::DepthPass::DEPTH_TEXTURE_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less, // Fragments drawn front to back.
                 stencil: wgpu::StencilState::default(),
@@ -265,6 +264,9 @@ impl<'a> Renderer<'a> {
             ));
         }
 
+        // Set up depth buffer and a visualization for the depth buffer.
+        let depth_pass = passes::DepthPass::new(&device, &surface_config);
+
         // TODO: Log info like GPU name, etc after creation.
 
         // Initialization (hopefully) complete!
@@ -275,14 +277,15 @@ impl<'a> Renderer<'a> {
             queue,
             surface_config,
             window_size,
-            depth_texture,
             render_pipeline,
             mesh: cube_mesh,
             models,
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
-            camera_controller: FreeLookCameraController::new(),
+            camera_controller: ArcballCameraController::new(),
+            depth_pass,
+            visualize_depth_pass: true,
             window,
         }
     }
@@ -305,11 +308,7 @@ impl<'a> Renderer<'a> {
             self.surface.configure(&self.device, &self.surface_config);
 
             // Recreate the depth buffer to match the new window size.
-            self.depth_texture = Texture::create_depth_texture(
-                &self.device,
-                &self.surface_config,
-                Some("depth buffer"),
-            );
+            self.depth_pass.resize(&self.device, &self.surface_config);
 
             // Recreate the camera viewport to match the new window size.
             self.camera
@@ -319,6 +318,18 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+        if let WindowEvent::KeyboardInput {
+            event: keyboard_input_event,
+            ..
+        } = event
+        {
+            if keyboard_input_event.state == ElementState::Released {
+                if let PhysicalKey::Code(KeyCode::KeyZ) = keyboard_input_event.physical_key {
+                    self.visualize_depth_pass = !self.visualize_depth_pass;
+                }
+            }
+        }
+
         self.camera_controller.process_input(event)
     }
 
@@ -383,7 +394,7 @@ impl<'a> Renderer<'a> {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
+                    view: self.depth_pass.depth_texture_view(),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -400,6 +411,11 @@ impl<'a> Renderer<'a> {
             for model in self.models.iter() {
                 render_pass.draw_model(model);
             }
+        }
+
+        // Depth pass visualization.
+        if self.visualize_depth_pass {
+            self.depth_pass.draw(&view, &mut command_encoder);
         }
 
         // All done - submit commands for execution.
