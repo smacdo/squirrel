@@ -1,201 +1,121 @@
-use glam::Mat4;
+use super::{
+    textures::Texture,
+    uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
+};
 
-use super::textures::Texture;
-
-// TODO: Refactor into a trait or some other reusable functionality because there
-//       is a lot of overlap between PerFrameUniforms and PerModelUniforms?
-// TODO: Use dirty flag to alert when forgetting to update prior to draw.
-
-/// Repsonsible for storing per-frame shader uniform values and copying them to
-/// a GPU backed buffer accessible to shaders.
-#[derive(Debug)]
-pub struct PerFrameUniforms {
-    buffer_data: PerFrameBufferData,
-    gpu_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-}
-
-impl PerFrameUniforms {
-    /// Create a new PerFrameUniforms object that initializes all WGPU resources.
-    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
-        let buffer_data = PerFrameBufferData {
-            view_projection: Mat4::IDENTITY,
-            time_elapsed_seconds: 0.0,
-            output_is_srgb: 0,
-            _padding: [0.0; 2],
-        };
-
-        let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("per-frame buffer"),
-                contents: bytemuck::bytes_of(&buffer_data),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("per-frame bind group"),
-            layout: &layouts.per_frame,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: gpu_buffer.as_entire_binding(),
-            }],
-        });
-
-        Self {
-            buffer_data,
-            gpu_buffer,
-            bind_group,
-        }
-    }
-
-    /// Set view projection matrix such that it will be sent to the GPU the next
-    /// time `write_to_gpu()` is called.
-    pub fn set_view_projection(&mut self, view_projection: glam::Mat4) {
-        self.buffer_data.view_projection = view_projection;
-    }
-
-    /// Set time elapsed such that it will be sent to the GPU the next time
-    /// `write_to_gpu()` is called.
-    pub fn set_time_elapsed_seconds(&mut self, time_elapsed: std::time::Duration) {
-        self.buffer_data.time_elapsed_seconds = time_elapsed.as_secs_f32();
-    }
-
-    /// Set if the output backbuffer format is SRGB or not.
-    pub fn set_output_is_srgb(&mut self, is_srgb: bool) {
-        self.buffer_data.output_is_srgb = if is_srgb { 1 } else { 0 };
-    }
-
-    /// Copy per frame uniform values from this structure to the GPU.
-    pub fn write_to_gpu(&self, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&[self.buffer_data]))
-    }
-
-    /// Get this object's WGPU bind group.
-    pub fn bind_group(&self) -> &wgpu::BindGroup {
-        &self.bind_group
-    }
-
-    /// Gets the bind group layout that describing any instances of `PerFrameUniforms`.
-    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-frame bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        }
-    }
-}
-
-/// The actual data that will be written to the per-frame GPU buffer. The data
-/// is stored in a separate struct from `PerFrameUniforms` to control its
-/// memory layout such that it can be trivially converted to a byte buffer for
-/// copying to GPU memory.
+/// Per-frame uniform values used by the standard shader model.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerFrameBufferData {
+#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
     pub time_elapsed_seconds: f32,
     pub output_is_srgb: u32,
     pub _padding: [f32; 2],
 }
 
+/// Repsonsible for storing per-frame shader uniform values and copying them to
+/// a GPU backed buffer accessible to shaders.
+pub struct PerFrameUniforms {
+    pub buffer: GenericUniformBuffer<PerFrameBufferData>,
+}
+
+impl PerFrameUniforms {
+    /// Create a new per frame uniform buffer. Only one instance is needed per
+    /// renderer.
+    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
+        Self {
+            buffer: GenericUniformBuffer::<PerFrameBufferData>::new(
+                device,
+                Some("per-frame uniforms"),
+                Default::default(),
+                &layouts.per_frame_layout,
+            ),
+        }
+    }
+
+    /// Set view projection matrix such that it will be sent to the GPU the next
+    /// time `write_to_gpu()` is called.
+    pub fn set_view_projection(&mut self, view_projection: glam::Mat4) {
+        self.buffer.values_mut().view_projection = view_projection;
+    }
+
+    /// Set time elapsed such that it will be sent to the GPU the next time
+    /// `write_to_gpu()` is called.
+    pub fn set_time_elapsed_seconds(&mut self, time_elapsed: std::time::Duration) {
+        self.buffer.values_mut().time_elapsed_seconds = time_elapsed.as_secs_f32();
+    }
+
+    /// Set if the output backbuffer format is SRGB or not.
+    pub fn set_output_is_srgb(&mut self, is_srgb: bool) {
+        self.buffer.values_mut().output_is_srgb = if is_srgb { 1 } else { 0 };
+    }
+}
+
+impl UniformBuffer for PerFrameUniforms {
+    fn update_gpu(&self, queue: &wgpu::Queue) {
+        self.buffer.update_gpu(queue)
+    }
+
+    fn bind_group(&self) -> &wgpu::BindGroup {
+        self.buffer.bind_group()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
+}
+
+/// Per-model uniform values that are used by the standard shader model.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PerModelBufferData {
+    pub local_to_world: glam::Mat4,
+    // TODO(scott): Lighting information.
+}
+
 /// Repsonsible for storing per-model shader uniform values and copying them to
 /// a GPU backed buffer accessible to shaders.
 #[derive(Debug)]
 pub struct PerModelUniforms {
-    buffer_data: PerModelBufferData,
-    gpu_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
+    pub buffer: GenericUniformBuffer<PerModelBufferData>,
 }
 
 impl PerModelUniforms {
-    /// Create a new PerModelUniforms object that initializes all WGPU resources.
+    /// Create a new PerModelUniforms object. One instance per model.
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
-        let buffer_data = PerModelBufferData {
-            local_to_world: Mat4::IDENTITY,
-        };
-
-        let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("per-model buffer"), // TODO(scott): Append caller specified name
-                contents: bytemuck::bytes_of(&buffer_data),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("per-model bind group"),
-            layout: &layouts.per_model,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: gpu_buffer.as_entire_binding(),
-            }],
-        });
-
         Self {
-            buffer_data,
-            gpu_buffer,
-            bind_group,
+            buffer: GenericUniformBuffer::<PerModelBufferData>::new(
+                device,
+                Some("per-model uniforms"),
+                Default::default(),
+                &layouts.per_model_layout,
+            ),
         }
     }
 
     /// Set local to world transform matrix such that it will be sent to the GPU
     /// the next time `write_to_gpu()` is called.
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
-        self.buffer_data.local_to_world = local_to_world;
-    }
-
-    /// Copy per frame uniform values from this structure to the GPU.
-    pub fn write_to_gpu(&self, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&[self.buffer_data]))
-    }
-
-    /// Get this object's WGPU bind group.
-    pub fn bind_group(&self) -> &wgpu::BindGroup {
-        &self.bind_group
-    }
-
-    /// Gets the bind group layout that describing any instances of `PerModelUniforms`.
-    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-model bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        }
+        self.buffer.values_mut().local_to_world = local_to_world;
     }
 }
 
-/// The actual data that will be written to the per-model GPU buffer. The data
-/// is stored in a separate struct from `PerModelUniforms` to control its
-/// memory layout such that it can be trivially converted to a byte buffer for
-/// copying to GPU memory.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerModelBufferData {
-    pub local_to_world: glam::Mat4,
-    // TODO(scott): Lighting information.
+impl UniformBuffer for PerModelUniforms {
+    fn update_gpu(&self, queue: &wgpu::Queue) {
+        self.buffer.update_gpu(queue)
+    }
+
+    fn bind_group(&self) -> &wgpu::BindGroup {
+        self.buffer.bind_group()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
 }
 
-/// Responsible for storing per-model shader values used during a model rendering
-/// pass.
+/// Responsible for storing per-submesh shader values used during a submesh
+/// rendering pass.
 pub struct PerSubmeshUniforms {
     bind_group: wgpu::BindGroup,
 }
@@ -204,7 +124,7 @@ impl PerSubmeshUniforms {
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, texture: Texture) -> Self {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-model bind group"), // TODO(scott): Append caller specified name
-            layout: &layouts.per_submesh,
+            layout: &layouts.per_submesh_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     // 0: Diffuse texture 2d.
@@ -226,13 +146,65 @@ impl PerSubmeshUniforms {
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }
+}
 
-    /// Gets the bind group layout that describing any instances of `PerMeshUniforms`.
+/// A registry of bind group layouts used by this renderer.
+pub struct BindGroupLayouts {
+    pub per_frame_layout: wgpu::BindGroupLayout,
+    pub per_model_layout: wgpu::BindGroupLayout,
+    pub per_submesh_layout: wgpu::BindGroupLayout,
+}
+
+impl BindGroupLayouts {
+    /// Create a new bind group layout registry.
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self {
+            per_frame_layout: device.create_bind_group_layout(&Self::per_frame_desc()),
+            per_model_layout: device.create_bind_group_layout(&Self::per_model_desc()),
+            per_submesh_layout: device.create_bind_group_layout(&Self::per_submesh_desc()),
+        }
+    }
+
+    /// Gets the bind group layout describing any instance of `PerFrameUniforms`.
+    pub fn per_frame_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-frame bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        }
+    }
+
+    /// Gets the bind group layout describing any instance of `PerModelUniforms`.
+    pub fn per_model_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-model bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        }
+    }
+
+    /// Gets the bind group layout describing any instance of `PerMeshUniforms`.
     ///
-    /// Bind Group Inputs:
+    /// Expected bind group inputs:
     ///  0 - diffuse texture
     ///  1 - diffuse sampler
-    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+    pub fn per_submesh_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             label: Some("per-mesh bind group layout"),
             entries: &[
@@ -257,24 +229,6 @@ impl PerSubmeshUniforms {
                     count: None,
                 },
             ],
-        }
-    }
-}
-
-/// A registry of bind group layouts used by this renderer.
-pub struct BindGroupLayouts {
-    pub per_frame: wgpu::BindGroupLayout,
-    pub per_model: wgpu::BindGroupLayout,
-    pub per_submesh: wgpu::BindGroupLayout,
-}
-
-impl BindGroupLayouts {
-    pub fn new(device: &wgpu::Device) -> Self {
-        Self {
-            per_frame: device.create_bind_group_layout(&PerFrameUniforms::bind_group_layout_desc()),
-            per_model: device.create_bind_group_layout(&PerModelUniforms::bind_group_layout_desc()),
-            per_submesh: device
-                .create_bind_group_layout(&PerSubmeshUniforms::bind_group_layout_desc()),
         }
     }
 }

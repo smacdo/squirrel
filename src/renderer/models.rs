@@ -5,6 +5,7 @@ use glam::{Mat4, Quat, Vec3};
 use super::{
     shaders::{BindGroupLayouts, PerModelUniforms, PerSubmeshUniforms},
     textures::Texture,
+    uniforms_buffers::UniformBuffer,
 };
 
 // TODO: Pass diffuse texture as a material.
@@ -58,7 +59,7 @@ impl Model {
         model *= Mat4::from_quat(self.rotation);
 
         self.uniforms.set_local_to_world(model);
-        self.uniforms.write_to_gpu(queue);
+        self.uniforms.buffer.update_gpu(queue);
 
         self.dirty = false
     }
@@ -143,7 +144,9 @@ where
         );
 
         // Bind the per-model uniforms for this model before drawing the mesh.
-        self.set_bind_group(1, model.uniforms.bind_group(), &[]);
+        debug_assert!(!model.uniforms.buffer.is_dirty());
+
+        self.set_bind_group(1, model.uniforms.buffer.bind_group(), &[]);
         self.draw_mesh(&model.mesh);
     }
 

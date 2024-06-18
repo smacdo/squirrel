@@ -4,13 +4,16 @@ mod models;
 mod passes;
 mod shaders;
 mod textures;
+mod uniforms_buffers;
 
 use std::{sync::Arc, time::Duration};
 
 use glam::{Quat, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
+use shaders::{BindGroupLayouts, PerFrameUniforms};
 use tracing::{info, warn};
+use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
 use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -19,7 +22,6 @@ use winit::window::Window;
 use crate::gameplay::ArcballCameraController;
 use crate::{camera::Camera, gameplay::CameraController};
 
-use shaders::{BindGroupLayouts, PerFrameUniforms};
 use textures::Texture;
 
 const INITIAL_CUBE_POS: &[Vec3] = &[
@@ -171,9 +173,9 @@ impl<'a> Renderer<'a> {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &bind_group_layouts.per_frame,
-                    &bind_group_layouts.per_model,
-                    &bind_group_layouts.per_submesh,
+                    &bind_group_layouts.per_frame_layout,
+                    &bind_group_layouts.per_model_layout,
+                    &bind_group_layouts.per_submesh_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -285,7 +287,7 @@ impl<'a> Renderer<'a> {
             per_frame_uniforms,
             camera_controller: ArcballCameraController::new(),
             depth_pass,
-            visualize_depth_pass: true,
+            visualize_depth_pass: false,
             window,
         }
     }
@@ -348,7 +350,7 @@ impl<'a> Renderer<'a> {
         self.per_frame_uniforms
             .set_time_elapsed_seconds(self.sys_time_elapsed);
 
-        self.per_frame_uniforms.write_to_gpu(&self.queue);
+        self.per_frame_uniforms.update_gpu(&self.queue);
 
         // Update uniforms for each model that will be rendered.
         let angle = self.sys_time_elapsed.as_secs_f32() * 1.5;
@@ -406,6 +408,8 @@ impl<'a> Renderer<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
+
+            debug_assert!(!self.per_frame_uniforms.is_dirty());
             render_pass.set_bind_group(0, self.per_frame_uniforms.bind_group(), &[]);
 
             for model in self.models.iter() {
