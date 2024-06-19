@@ -48,6 +48,7 @@ pub struct Renderer<'a> {
     render_pipeline: wgpu::RenderPipeline,
     per_frame_uniforms: PerFrameUniforms,
     depth_pass: passes::DepthPass,
+    debug_pass: passes::DebugPass,
     sys_time_elapsed: std::time::Duration,
     debug_state: DebugState,
     // TODO(scott): extract gameplay code into separate module.
@@ -63,6 +64,8 @@ pub struct Renderer<'a> {
 // TODO: Renderer::new() should return Result<Self> and remove .unwrap().
 
 impl<'a> Renderer<'a> {
+    const STANDARD_SHADER: &'static str = include_str!("standard_shader.wgsl");
+
     pub async fn new(window: &'a Window) -> Self {
         let window_size = window.inner_size();
         info!("initial renderer size: {:?}", window_size);
@@ -160,7 +163,7 @@ impl<'a> Renderer<'a> {
         // Load the default shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(Self::STANDARD_SHADER.into()),
         });
 
         // Create the default render pipeline layout and render pipeline objects.
@@ -258,8 +261,9 @@ impl<'a> Renderer<'a> {
             ));
         }
 
-        // Set up depth buffer and a visualization for the depth buffer.
+        // Set up additional render passes.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);
+        let debug_pass = passes::DebugPass::new(&device, &surface_config, &bind_group_layouts);
 
         // Initialization (hopefully) complete!
         Self {
@@ -275,6 +279,7 @@ impl<'a> Renderer<'a> {
             per_frame_uniforms,
             camera_controller: ArcballCameraController::new(),
             depth_pass,
+            debug_pass,
             debug_state: Default::default(),
             window,
         }
@@ -396,6 +401,10 @@ impl<'a> Renderer<'a> {
         if self.debug_state.visualize_depth_pass {
             self.depth_pass.draw(&view, &mut command_encoder);
         }
+
+        // Debug pass visualization.
+        self.debug_pass
+            .draw(&view, &self.per_frame_uniforms, &mut command_encoder);
 
         // All done - submit commands for execution.
         self.queue.submit(std::iter::once(command_encoder.finish()));

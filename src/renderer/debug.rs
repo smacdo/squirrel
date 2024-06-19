@@ -55,6 +55,7 @@ impl DebugVertex {
         }
     }
 }
+
 /// Vertices for a full screen quad in CCW order.
 pub const QUAD_VERTS: &[DebugVertex] = &[
     DebugVertex {
@@ -77,3 +78,156 @@ pub const QUAD_VERTS: &[DebugVertex] = &[
 
 /// Indices for a full screen quad in CCW order.
 pub const QUAD_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
+
+/// Vertices for a simple cube mesh that ranges from [-0.5, 0.5] in all dimensions.
+pub const CUBE_VERTS: &[DebugVertex] = &[
+    DebugVertex {
+        position: [0.5, 0.5, -0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, -0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, -0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, -0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, -0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, 0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, 0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, 0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, 0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, 0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, -0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, 0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, -0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, 0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, -0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, -0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, 0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [-0.5, -0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, -0.5],
+        tex_coords: [1.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, -0.5],
+        tex_coords: [0.0, 1.0],
+    },
+    DebugVertex {
+        position: [-0.5, 0.5, 0.5],
+        tex_coords: [0.0, 0.0],
+    },
+    DebugVertex {
+        position: [0.5, 0.5, 0.5],
+        tex_coords: [1.0, 0.0],
+    },
+];
+
+pub const CUBE_INDICES: &[u16] = &[
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+];

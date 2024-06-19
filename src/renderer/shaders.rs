@@ -3,6 +3,9 @@ use super::{
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
 
+// TODO(scott): Use a derive! macro to eliminate the copy-paste in these
+//              `per-frame-*` structs.
+
 /// Per-frame uniform values used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -33,14 +36,12 @@ impl PerFrameUniforms {
         }
     }
 
-    /// Set view projection matrix such that it will be sent to the GPU the next
-    /// time `write_to_gpu()` is called.
+    /// Set view projection matrix.
     pub fn set_view_projection(&mut self, view_projection: glam::Mat4) {
         self.buffer.values_mut().view_projection = view_projection;
     }
 
-    /// Set time elapsed such that it will be sent to the GPU the next time
-    /// `write_to_gpu()` is called.
+    /// Set time elapsed in seconds.
     pub fn set_time_elapsed_seconds(&mut self, time_elapsed: std::time::Duration) {
         self.buffer.values_mut().time_elapsed_seconds = time_elapsed.as_secs_f32();
     }
@@ -93,8 +94,7 @@ impl PerModelUniforms {
         }
     }
 
-    /// Set local to world transform matrix such that it will be sent to the GPU
-    /// the next time `write_to_gpu()` is called.
+    /// Set local to world transform matrix.
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
         self.buffer.values_mut().local_to_world = local_to_world;
     }
@@ -148,11 +148,59 @@ impl PerSubmeshUniforms {
     }
 }
 
+/// Per-model uniform values that are used by the standard shader model.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PerDebugMeshBufferData {
+    pub local_to_world: glam::Mat4,
+}
+
+/// Repsonsible for storing per-debug-mesh shader uniform values and copying
+/// them to a GPU backed buffer accessible to shaders.
+#[derive(Debug)]
+pub struct PerDebugMeshUniforms {
+    pub buffer: GenericUniformBuffer<PerDebugMeshBufferData>,
+}
+
+impl PerDebugMeshUniforms {
+    /// Create a new PerDebugMeshUniforms object. One instance per debug mesh.
+    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
+        Self {
+            buffer: GenericUniformBuffer::<PerDebugMeshBufferData>::new(
+                device,
+                Some("per-debug-mesh uniforms"),
+                Default::default(),
+                &layouts.per_model_layout,
+            ),
+        }
+    }
+
+    /// Set local to world transform matrix.
+    pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
+        self.buffer.values_mut().local_to_world = local_to_world;
+    }
+}
+
+impl UniformBuffer for PerDebugMeshUniforms {
+    fn update_gpu(&self, queue: &wgpu::Queue) {
+        self.buffer.update_gpu(queue)
+    }
+
+    fn bind_group(&self) -> &wgpu::BindGroup {
+        self.buffer.bind_group()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
+}
+
 /// A registry of bind group layouts used by this renderer.
 pub struct BindGroupLayouts {
     pub per_frame_layout: wgpu::BindGroupLayout,
     pub per_model_layout: wgpu::BindGroupLayout,
     pub per_submesh_layout: wgpu::BindGroupLayout,
+    pub per_debug_mesh_layout: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -162,6 +210,7 @@ impl BindGroupLayouts {
             per_frame_layout: device.create_bind_group_layout(&Self::per_frame_desc()),
             per_model_layout: device.create_bind_group_layout(&Self::per_model_desc()),
             per_submesh_layout: device.create_bind_group_layout(&Self::per_submesh_desc()),
+            per_debug_mesh_layout: device.create_bind_group_layout(&Self::per_debug_mesh_desc()),
         }
     }
 
@@ -229,6 +278,23 @@ impl BindGroupLayouts {
                     count: None,
                 },
             ],
+        }
+    }
+
+    /// Gets the bind group layout describing any instance of `PerDebugMeshUniforms`.
+    pub fn per_debug_mesh_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-debug-mesh bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
         }
     }
 }

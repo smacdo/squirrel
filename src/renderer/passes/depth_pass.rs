@@ -31,6 +31,7 @@ pub struct DepthPass {
 
 impl DepthPass {
     pub const DEPTH_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    const SHADER: &'static str = include_str!("depth_pass.wgsl");
 
     /// Create a new depth pass. Only one instance is needed per renderer.
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
@@ -98,7 +99,7 @@ impl DepthPass {
         // Load the depth shader which renders to the debug quad.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("depth display shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../assets/depth_buffer.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(Self::SHADER.into()),
         });
 
         // Create the render pipeline which is used for rendering the depth pass
