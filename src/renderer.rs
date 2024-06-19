@@ -1,4 +1,4 @@
-mod debug_state;
+mod debug;
 mod instancing;
 mod meshes;
 mod models;
@@ -9,7 +9,7 @@ mod uniforms_buffers;
 
 use std::{sync::Arc, time::Duration};
 
-use debug_state::DebugState;
+use debug::DebugState;
 use glam::{Quat, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
