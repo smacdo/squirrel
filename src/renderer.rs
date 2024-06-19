@@ -48,7 +48,7 @@ pub struct Renderer<'a> {
     render_pipeline: wgpu::RenderPipeline,
     per_frame_uniforms: PerFrameUniforms,
     depth_pass: passes::DepthPass,
-    debug_pass: passes::DebugPass,
+    light_debug_pass: passes::LightDebugPass,
     sys_time_elapsed: std::time::Duration,
     debug_state: DebugState,
     // TODO(scott): extract gameplay code into separate module.
@@ -145,7 +145,7 @@ impl<'a> Renderer<'a> {
         // +y is up
         // +z is out of the screen.
         let camera = Camera::new(
-            Vec3::new(0.0, 5.0, 10.0),
+            Vec3::new(1.5, 1.0, 5.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
             f32::to_radians(45.0),
@@ -251,19 +251,27 @@ impl<'a> Renderer<'a> {
 
         let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
 
-        for initial_pos in INITIAL_CUBE_POS {
-            models.push(Model::new(
-                &device,
-                &bind_group_layouts,
-                *initial_pos,
-                Quat::IDENTITY,
-                cube_mesh.clone(),
-            ));
-        }
+        //for initial_pos in INITIAL_CUBE_POS {
+        let initial_pos = INITIAL_CUBE_POS.first().unwrap();
+
+        let mut m = Model::new(
+            &device,
+            &bind_group_layouts,
+            *initial_pos,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            cube_mesh.clone(),
+        );
+
+        m.uniforms_mut().set_object_color(Vec3::new(1.0, 0.5, 0.31));
+        m.uniforms_mut().set_light_color(Vec3::new(1.0, 1.0, 1.0));
+
+        models.push(m);
 
         // Set up additional render passes.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);
-        let debug_pass = passes::DebugPass::new(&device, &surface_config, &bind_group_layouts);
+        let light_debug_pass =
+            passes::LightDebugPass::new(&device, &surface_config, &bind_group_layouts);
 
         // Initialization (hopefully) complete!
         Self {
@@ -279,7 +287,7 @@ impl<'a> Renderer<'a> {
             per_frame_uniforms,
             camera_controller: ArcballCameraController::new(),
             depth_pass,
-            debug_pass,
+            light_debug_pass,
             debug_state: Default::default(),
             window,
         }
@@ -333,15 +341,12 @@ impl<'a> Renderer<'a> {
         self.per_frame_uniforms.update_gpu(&self.queue);
 
         // Update uniforms for each model that will be rendered.
-        let angle = self.sys_time_elapsed.as_secs_f32() * 1.5;
-
         for model in &mut self.models.iter_mut() {
-            model.set_rotation(Quat::from_axis_angle(
-                Vec3::new(0.5, 1.0, 0.0).normalize(),
-                angle,
-            ));
-            model.update_gpu(&self.queue);
+            model.uniforms_mut().update_gpu(&self.queue);
         }
+
+        // Passes / overlays.
+        self.light_debug_pass.prepare(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -397,14 +402,18 @@ impl<'a> Renderer<'a> {
             }
         }
 
+        // Debug pass visualization.
+        self.light_debug_pass.draw(
+            &view,
+            self.depth_pass.depth_texture_view(),
+            &self.per_frame_uniforms,
+            &mut command_encoder,
+        );
+
         // Depth pass visualization.
         if self.debug_state.visualize_depth_pass {
             self.depth_pass.draw(&view, &mut command_encoder);
         }
-
-        // Debug pass visualization.
-        self.debug_pass
-            .draw(&view, &self.per_frame_uniforms, &mut command_encoder);
 
         // All done - submit commands for execution.
         self.queue.submit(std::iter::once(command_encoder.finish()));

@@ -1,6 +1,6 @@
+use glam::{Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
-// TODO(scott): Render quads and text.
 // TODO(scott): Add debug state to `DebugState`, then pass to here ::update + ::draw
 
 use crate::renderer::{
@@ -10,16 +10,15 @@ use crate::renderer::{
 };
 
 /// Provides a debug visualization layer to the renderer.
-pub struct DebugPass {
+pub struct LightDebugPass {
     /// Render pipeline for the debug overlay.
     render_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
     cube_index_buffer: wgpu::Buffer,
-    _cube_mesh_uniforms: PerDebugMeshUniforms, // TODO: Use model instancing.
+    cube_mesh_uniforms: PerDebugMeshUniforms, // TODO: Use model instancing.
 }
 
-impl DebugPass {
-    // TODO: Swap!
+impl LightDebugPass {
     const SHADER: &'static str = include_str!("debug_shader.wgsl");
 
     /// Create a new debug pass. Only one instance is needed per renderer.
@@ -76,7 +75,13 @@ impl DebugPass {
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: super::DepthPass::DEPTH_TEXTURE_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Less, // Fragments drawn front to back.
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -101,15 +106,29 @@ impl DebugPass {
             render_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
-            _cube_mesh_uniforms: cube_mesh_uniforms,
+            cube_mesh_uniforms,
         }
+    }
+
+    /// Prepare for rendering by creating and updating all resources used during
+    /// rendering.
+    pub fn prepare(&mut self, queue: &wgpu::Queue) {
+        self.cube_mesh_uniforms
+            .set_local_to_world(Mat4::from_scale_rotation_translation(
+                Vec3::new(0.2, 0.2, 0.2),
+                Quat::IDENTITY,
+                Vec3::new(1.2, 1.0, 2.0),
+            ));
+
+        self.cube_mesh_uniforms.update_gpu(queue);
     }
 
     /// Draw the debug pass.
     pub fn draw(
         &self,
         output_view: &wgpu::TextureView,
-        per_frame_uniforms: &PerFrameUniforms, // TODO: Don't pass, recreate to remove dependency.
+        depth_buffer: &wgpu::TextureView,
+        per_frame_uniforms: &PerFrameUniforms, // TODO: Don't pass, move values to `prepare`.
         command_encoder: &mut wgpu::CommandEncoder,
     ) {
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -122,7 +141,14 @@ impl DebugPass {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_buffer,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
         });
@@ -135,8 +161,8 @@ impl DebugPass {
 
         // Draw each debug cube mesh.
         //for 0..1 {
-        //render_pass.set_bind_group(1, self.cube_mesh_uniforms.bind_group(), &[]);
-        //render_pass.draw_indexed((0..CUBE_INDICES.len() as u32), 0, 0..1);
+        render_pass.set_bind_group(1, self.cube_mesh_uniforms.bind_group(), &[]);
+        render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
         //}
     }
 }

@@ -15,16 +15,15 @@ use super::{
 /// the renderer.
 pub struct Model {
     /// The world position of this model.
-    position: Vec3,
+    translation: Vec3,
     /// The rotation of this model.
     rotation: Quat,
+    /// The scale of this model.
+    scale: Vec3,
     /// Shader uniform values associated with this model. The uniforms must be
     /// uploaded to the GPU after changes to position, rotation etc. This update
     /// must happen prior to drawing.
     uniforms: PerModelUniforms,
-    /// A flag that is set to true after any state is changed and the new value
-    /// has not been submitted to the GPU.
-    pub dirty: bool,
     /// Reference to the shared mesh that this model will draw.
     mesh: Arc<Mesh>,
 }
@@ -34,34 +33,62 @@ impl Model {
     pub fn new(
         device: &wgpu::Device,
         layouts: &BindGroupLayouts,
-        position: Vec3,
+        translation: Vec3,
         rotation: Quat,
+        scale: Vec3,
         mesh: Arc<Mesh>,
     ) -> Self {
         Self {
-            position,
+            translation,
             rotation,
+            scale,
             uniforms: PerModelUniforms::new(device, layouts),
             mesh,
-            dirty: true,
         }
+    }
+
+    /// Get model uniforms.
+    pub fn uniforms(&mut self) -> &PerModelUniforms {
+        &self.uniforms
+    }
+
+    /// Get model uniforms.
+    pub fn uniforms_mut(&mut self) -> &mut PerModelUniforms {
+        &mut self.uniforms
+    }
+
+    /// Set position, rotation and scale of this model.
+    pub fn set_scale_rotation_translation(
+        &mut self,
+        scale: Vec3,
+        rotation: Quat,
+        translation: Vec3,
+    ) {
+        self.scale = scale;
+        self.rotation = rotation;
+        self.translation = translation;
+
+        self.uniforms
+            .set_local_to_world(Mat4::from_scale_rotation_translation(
+                scale,
+                rotation,
+                translation,
+            ));
+    }
+
+    /// Set the position of this model.
+    pub fn set_translation(&mut self, translation: Vec3) {
+        self.set_scale_rotation_translation(self.scale, self.rotation, translation)
     }
 
     /// Set the rotation of the model.
     pub fn set_rotation(&mut self, rotation: Quat) {
-        self.rotation = rotation;
-        self.dirty = true;
+        self.set_scale_rotation_translation(self.scale, rotation, self.translation)
     }
 
-    /// Send model state (position, rotation, etc) to the GPU.
-    pub fn update_gpu(&mut self, queue: &wgpu::Queue) {
-        let mut model = Mat4::from_translation(self.position);
-        model *= Mat4::from_quat(self.rotation);
-
-        self.uniforms.set_local_to_world(model);
-        self.uniforms.buffer.update_gpu(queue);
-
-        self.dirty = false
+    /// Set the scale of the model.
+    pub fn set_scale(&mut self, scale: Vec3) {
+        self.set_scale_rotation_translation(scale, self.rotation, self.translation)
     }
 }
 
@@ -138,11 +165,6 @@ where
     'a: 'rpass,
 {
     fn draw_model(&mut self, model: &'a Model) {
-        debug_assert!(
-            !model.dirty,
-            "model state changes have not been submitted to the GPU prior this draw request"
-        );
-
         // Bind the per-model uniforms for this model before drawing the mesh.
         debug_assert!(!model.uniforms.buffer.is_dirty());
 

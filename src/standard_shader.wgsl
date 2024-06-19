@@ -6,11 +6,13 @@ struct PerFrameUniforms {
 
 struct PerModelUniforms {
     local_to_world: mat4x4<f32>,
+    object_color: vec3<f32>,
+    light_color: vec3<f32>,
 }
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) normal: vec3<f32>,
     @location(2) tex_coords: vec2<f32>,
 }
 
@@ -50,7 +52,7 @@ var diffuse_sampler: sampler;
 fn vs_main(mesh: VertexInput) -> VertexOutput {
     var v: VertexOutput;
 
-    v.color = mesh.color;
+    v.color = vec3(1.0);
     v.tex_coords = mesh.tex_coords;
     v.position_cs = per_frame.view_projection
         * per_model.local_to_world
@@ -61,9 +63,12 @@ fn vs_main(mesh: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let tex_color = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
-    let vert_color = vec4<f32>(in.color, 1.0);
-    let frag_color = tex_color * vert_color;
+    // TODO: Restore the old shader code once lighting implementation completed.
+    //let tex_color = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
+    //let vert_color = vec4<f32>(in.color, 1.0);
+    //let frag_color = tex_color * vert_color;
+
+    let frag_color = vec4<f32>(per_model.light_color * per_model.object_color, 1.0);
 
     // Should the color be converted from linear to sRGB in the pixel shader?
     // Otherwise simply return it in lienar space.

@@ -6,6 +6,7 @@ struct PerFrameUniforms {
 
 struct PerModelUniforms {
     local_to_world: mat4x4<f32>,
+    tint_color: vec3<f32>,
 }
 
 struct VertexInput {
@@ -50,7 +51,7 @@ var<uniform> per_model: PerModelUniforms;
 fn vs_main(mesh: VertexInput) -> VertexOutput {
     var v: VertexOutput;
 
-    v.color = vec3(1.0);
+    v.color = per_model.tint_color;
     v.tex_coords = mesh.tex_coords;
     v.position_cs = per_frame.view_projection
         * per_model.local_to_world

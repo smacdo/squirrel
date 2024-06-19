@@ -1,3 +1,5 @@
+use glam::Vec3;
+
 use super::{
     textures::Texture,
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
@@ -71,7 +73,9 @@ impl UniformBuffer for PerFrameUniforms {
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PerModelBufferData {
     pub local_to_world: glam::Mat4,
-    // TODO(scott): Lighting information.
+    pub object_color: glam::Vec3,
+    pub light_color: glam::Vec3,
+    pub _padding: [f32; 2],
 }
 
 /// Repsonsible for storing per-model shader uniform values and copying them to
@@ -97,6 +101,16 @@ impl PerModelUniforms {
     /// Set local to world transform matrix.
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
         self.buffer.values_mut().local_to_world = local_to_world;
+    }
+
+    /// Set the object color.
+    pub fn set_object_color(&mut self, color: Vec3) {
+        self.buffer.values_mut().object_color = color;
+    }
+
+    /// Set the light color.
+    pub fn set_light_color(&mut self, color: Vec3) {
+        self.buffer.values_mut().light_color = color;
     }
 }
 
@@ -148,11 +162,13 @@ impl PerSubmeshUniforms {
     }
 }
 
-/// Per-model uniform values that are used by the standard shader model.
+/// Per-model uniform values that are used by the debug shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PerDebugMeshBufferData {
     pub local_to_world: glam::Mat4,
+    pub color_tint: glam::Vec3,
+    pub _padding: [f32; 1],
 }
 
 /// Repsonsible for storing per-debug-mesh shader uniform values and copying
@@ -169,7 +185,11 @@ impl PerDebugMeshUniforms {
             buffer: GenericUniformBuffer::<PerDebugMeshBufferData>::new(
                 device,
                 Some("per-debug-mesh uniforms"),
-                Default::default(),
+                PerDebugMeshBufferData {
+                    local_to_world: Default::default(),
+                    color_tint: Vec3::ONE,
+                    _padding: Default::default(),
+                },
                 &layouts.per_model_layout,
             ),
         }
@@ -178,6 +198,11 @@ impl PerDebugMeshUniforms {
     /// Set local to world transform matrix.
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
         self.buffer.values_mut().local_to_world = local_to_world;
+    }
+
+    /// Set tint color.
+    pub fn set_color_tint(&mut self, color: glam::Vec3) {
+        self.buffer.values_mut().color_tint = color;
     }
 }
 
@@ -304,7 +329,7 @@ impl BindGroupLayouts {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub color: [f32; 3],
+    pub normal: [f32; 3],
     pub tex_coords: [f32; 2],
 }
 
