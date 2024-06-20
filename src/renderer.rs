@@ -74,7 +74,7 @@ impl<'a> Renderer<'a> {
     const LIGHT: Light = Light {
         position: Vec3::new(1.2, 1.0, 2.0),
         color: Vec3::new(0.5, 0.5, 0.5),
-        ambient: 0.4,
+        ambient: 0.2,
         specular: 1.0,
     };
 
@@ -252,7 +252,7 @@ impl<'a> Renderer<'a> {
                 0..indices.len() as u32,
                 0,
                 &Material {
-                    ambient_color: Vec3::new(1.0, 0.5, 0.31),
+                    ambient_color: Vec3::new(1.0, 1.0, 1.0),
                     diffuse_color: Vec3::new(1.0, 1.0, 1.0),
                     diffuse_map: Rc::new(
                         textures::from_image_bytes(
@@ -273,18 +273,19 @@ impl<'a> Renderer<'a> {
                         )
                         .unwrap(),
                     ),
-                    specular_power: 32.0,
+                    specular_power: 64.0,
+                    emissive_map: Rc::new(
+                        textures::from_image_bytes(
+                            &device,
+                            &queue,
+                            include_bytes!("assets/matrix_emissive.dds"),
+                            Some("crate emmisive texture"),
+                        )
+                        .unwrap(),
+                    ),
                 },
             )],
         ));
-
-        // TODO: Test 1x1 map
-        /*
-        Texture::new_1x1(&device, &queue, [1, 1, 1], Some("none material texture"))
-                            .unwrap()
-
-
-         */
 
         // Set up scene.
         let light = Self::LIGHT.clone();

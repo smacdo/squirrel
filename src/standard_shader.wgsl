@@ -58,13 +58,16 @@ var<uniform> per_model: PerModelUniforms;
 var<uniform> per_submesh: PerSubmeshUniforms;
 
 @group(2) @binding(1)
-var diffuse_texture: texture_2d<f32>;
+var tex_sampler: sampler;
 
 @group(2) @binding(2)
-var specular_texture: texture_2d<f32>;
+var diffuse_texture: texture_2d<f32>;
 
 @group(2) @binding(3)
-var tex_sampler: sampler;
+var specular_texture: texture_2d<f32>;
+
+@group(2) @binding(4)
+var emissive_texture: texture_2d<f32>;
 
 @vertex
 fn vs_main(v_in: VertexInput) -> VertexOutput {
@@ -83,9 +86,11 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample the diffuse and specular texture maps. For materials that do not
-    // have an associated texture map use a default 1x1 white pixel.
+    // have an associated texture map use a default 1x1 white pixel. Use a 1x1
+    // black pixel to default the emissive map.
     let diffuse_tex_color = textureSample(diffuse_texture, tex_sampler, v_in.tex_coords).xyz;
     let specular_tex_color = textureSample(specular_texture, tex_sampler, v_in.tex_coords).xyz;
+    let emissive_tex_color = textureSample(emissive_texture, tex_sampler, v_in.tex_coords).xyz;
 
     // Unpack lighting into separate variables.
     let light_pos = per_model.light_pos.xyz;
@@ -120,7 +125,12 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
         * specular_tex_color;
 
     // Final color is an additive combination of ambient, diffuse and specular.
-    let frag_color = vec4<f32>(ambient_color + diffuse_color + specular_color, 1.0);
+    let frag_color = vec4<f32>(ambient_color
+            + diffuse_color
+            + specular_color
+            + emissive_tex_color,
+        1.0
+    );
 
     // Should the color be converted from linear to sRGB in the pixel shader?
     // Otherwise simply return it in lienar space.

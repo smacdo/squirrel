@@ -10,6 +10,7 @@ pub struct Material {
     pub specular_color: Vec3,
     pub specular_map: Rc<wgpu::Texture>,
     pub specular_power: f32,
+    pub emissive_map: Rc<wgpu::Texture>,
 }
 
 #[derive(Clone, Debug)]
