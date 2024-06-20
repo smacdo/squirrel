@@ -291,21 +291,16 @@ impl<'a> Renderer<'a> {
         let light = Self::LIGHT.clone();
         let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
 
-        //for initial_pos in INITIAL_CUBE_POS {
-        let initial_pos = INITIAL_CUBE_POS.first().unwrap();
-
-        let mut m = Model::new(
-            &device,
-            &bind_group_layouts,
-            *initial_pos,
-            Quat::IDENTITY,
-            Vec3::ONE,
-            cube_mesh.clone(),
-        );
-
-        m.uniforms_mut().set_light(&light);
-
-        models.push(m);
+        for initial_pos in INITIAL_CUBE_POS {
+            models.push(Model::new(
+                &device,
+                &bind_group_layouts,
+                *initial_pos,
+                Quat::IDENTITY,
+                Vec3::ONE,
+                cube_mesh.clone(),
+            ));
+        }
 
         // Set up additional render passes.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);

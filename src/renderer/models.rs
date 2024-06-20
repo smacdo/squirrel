@@ -39,13 +39,16 @@ impl Model {
         scale: Vec3,
         mesh: Rc<Mesh>,
     ) -> Self {
-        Self {
-            translation,
-            rotation,
-            scale,
+        let mut m = Self {
+            translation: Default::default(),
+            rotation: Default::default(),
+            scale: Default::default(),
             uniforms: PerModelUniforms::new(device, layouts),
             mesh,
-        }
+        };
+
+        m.set_scale_rotation_translation(scale, rotation, translation);
+        m
     }
 
     /// Get model uniforms.
