@@ -7,9 +7,15 @@ struct PerFrameUniforms {
 
 struct PerModelUniforms {
     local_to_world: mat4x4<f32>,
-    object_color: vec3<f32>,
-    light_color: vec3<f32>,
-    light_pos: vec3<f32>,
+    world_to_local: mat4x4<f32>,
+    light_pos: vec4<f32>,   // .w is specular whiteness amount
+    light_color: vec4<f32>, // .w is ambient amount
+}
+
+struct PerSubmeshUniforms {
+    ambient_color: vec3<f32>,
+    diffuse_color: vec3<f32>,
+    specular_color: vec4<f32>, // .w is power.
 }
 
 struct VertexInput {
@@ -35,13 +41,11 @@ struct VertexOutput {
     @builtin(position) position_cs: vec4<f32>,
     /// Vertex position in world space (rather than clip space) to allow world
     /// space lighting calculations in the fragment shader.
-    @location(1) position_ws: vec3<f32>,
-    /// RGB color of the vertex.
-    @location(0) color: vec3<f32>,
+    @location(0) position_ws: vec3<f32>,
     /// Normal vector from the vertex.
-    @location(2) normal: vec3<f32>,
+    @location(1) normal: vec3<f32>,
     /// UV texture coordinates of the vertex.
-    @location(3) tex_coords: vec2<f32>,
+    @location(2) tex_coords: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -51,8 +55,11 @@ var<uniform> per_frame: PerFrameUniforms;
 var<uniform> per_model: PerModelUniforms;
 
 @group(2) @binding(0)
-var diffuse_texture: texture_2d<f32>;
+var<uniform> per_submesh: PerSubmeshUniforms;
+
 @group(2) @binding(1)
+var diffuse_texture: texture_2d<f32>;
+@group(2) @binding(2)
 var diffuse_sampler: sampler;
 
 @vertex
@@ -63,9 +70,9 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
         * per_model.local_to_world
         * vec4<f32>(v_in.position, 1.0);
     v_out.position_ws = (per_model.local_to_world * vec4<f32>(v_in.position, 1.0)).xyz;
-    v_out.color = vec3(1.0);
-    v_out.normal = v_in.normal;
+    v_out.normal = (transpose(per_model.world_to_local) * vec4<f32>(v_in.normal, 1.0)).xyz;
     v_out.tex_coords = v_in.tex_coords;
+
 
     return v_out;
 }
@@ -77,29 +84,30 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     //let vert_color = vec4<f32>(v_in.color, 1.0);
     //let frag_color = tex_color * vert_color;
 
+    // Unpack lighting into separate variables.
+    let light_pos = per_model.light_pos.xyz;
+    let light_color = per_model.light_color.xyz;
+    let light_ambient = per_model.light_pos.w;
+    let light_specular = per_model.light_color.w;
+
     // Ambient lighting.
-    let ambient_strength = 0.1;
-    let ambient_color = per_model.light_color * ambient_strength;
+    let ambient_color = light_color * light_ambient * per_submesh.ambient_color;
 
     // Diffuse lighting.
     // The light direction is a vector pointing from this fragment to the light.
     let normal = normalize(v_in.normal);
-    let light_dir = normalize(per_model.light_pos - v_in.position_ws);
+    let light_dir = normalize(light_pos - v_in.position_ws);
     let diffuse_amount = max(dot(normal, light_dir), 0.0);
-    let diffuse_color = diffuse_amount * per_model.light_color;
+    let diffuse_color = light_color * diffuse_amount * per_submesh.diffuse_color;
 
     // Specular lighting.
-    let specular_strength = 0.5;
     let view_dir = normalize(per_frame.view_pos.xyz - v_in.position_ws);
     let reflect_dir = reflect(-light_dir, normal);
-    let specular_amount = pow(max(dot(view_dir, reflect_dir), 0.0), 32.0);
-    let specular_color = specular_amount * specular_strength * per_model.object_color;
+    let specular_amount = pow(max(dot(view_dir, reflect_dir), 0.0), per_submesh.specular_color.w);
+    let specular_color = vec3<f32>(1.0) * light_specular * specular_amount * per_submesh.specular_color.xyz;
 
     // Final color is an additive combination of ambient, diffuse and specular.
-    let frag_color = vec4<f32>(
-        (ambient_color + diffuse_color + specular_color) * per_model.object_color,
-        1.0
-    );
+    let frag_color = vec4<f32>(ambient_color + diffuse_color + specular_color, 1.0);
 
     // Should the color be converted from linear to sRGB in the pixel shader?
     // Otherwise simply return it in lienar space.

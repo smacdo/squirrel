@@ -79,6 +79,11 @@ where
         }
     }
 
+    /// Access the values stored in this uniform buffer.
+    pub fn values(&self) -> &T {
+        &self.values
+    }
+
     /// Access the values stored in this uniform buffer with a mutable ref.
     ///
     /// Calling this method will set the buffer's dirty flag even if no values

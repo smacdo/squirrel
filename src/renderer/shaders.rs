@@ -1,6 +1,7 @@
-use glam::{Vec3, Vec3Swizzles, Vec4};
+use glam::{Mat4, Vec3, Vec4};
 
 use super::{
+    shading::{Light, Material},
     textures::Texture,
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
@@ -79,12 +80,9 @@ impl UniformBuffer for PerFrameUniforms {
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PerModelBufferData {
     pub local_to_world: glam::Mat4,
-    pub object_color: glam::Vec3,
-    pub _padding_0: f32,
-    pub light_color: glam::Vec3,
-    pub _padding_1: f32,
-    pub light_position: glam::Vec3,
-    pub _padding_2: f32,
+    pub world_to_local: glam::Mat4,
+    pub light_position: glam::Vec4, // .w is ambient amount.
+    pub light_color: glam::Vec4,    // .w is specular amount.
 }
 
 /// Repsonsible for storing per-model shader uniform values and copying them to
@@ -111,22 +109,23 @@ impl PerModelUniforms {
     #[allow(dead_code)]
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
         self.buffer.values_mut().local_to_world = local_to_world;
+        self.buffer.values_mut().world_to_local = local_to_world.inverse();
+        debug_assert!(!self.buffer.values().world_to_local.is_nan());
     }
 
-    /// Set the object color.
-    pub fn set_object_color(&mut self, color: Vec3) {
-        self.buffer.values_mut().object_color = color;
-    }
+    /// Set light information.
+    pub fn set_light(&mut self, light: &Light) {
+        debug_assert!(light.ambient >= 0.0 && light.ambient <= 1.0);
+        debug_assert!(light.specular >= 0.0 && light.specular <= 1.0);
 
-    /// Set the light color.
-    pub fn set_light_color(&mut self, color: Vec3) {
-        self.buffer.values_mut().light_color = color;
-    }
-
-    /// Set the light world position.
-    #[allow(dead_code)]
-    pub fn set_light_position(&mut self, position: Vec3) {
-        self.buffer.values_mut().light_position = position;
+        self.buffer.values_mut().light_position = Vec4::new(
+            light.position.x,
+            light.position.y,
+            light.position.z,
+            light.ambient,
+        );
+        self.buffer.values_mut().light_color =
+            Vec4::new(light.color.x, light.color.y, light.color.z, light.specular);
     }
 }
 
@@ -144,37 +143,97 @@ impl UniformBuffer for PerModelUniforms {
     }
 }
 
+/// Per-submesh uniform values that are used by the standard shader model.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PerSubmeshBufferData {
+    pub ambient_color: Vec3,
+    pub _padding_2: f32,
+    pub diffuse_color: Vec3,
+    pub _padding_3: f32,
+    pub specular_color: Vec4,
+}
+
 /// Responsible for storing per-submesh shader values used during a submesh
 /// rendering pass.
+#[derive(Debug)]
 pub struct PerSubmeshUniforms {
+    values: PerSubmeshBufferData,
+    gpu_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    is_dirty: std::cell::Cell<bool>,
 }
 
 impl PerSubmeshUniforms {
-    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, texture: Texture) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        layouts: &BindGroupLayouts,
+        material: &Material,
+        diffuse_texture: Texture,
+    ) -> Self {
+        let values = PerSubmeshBufferData {
+            ambient_color: material.ambient_color,
+            diffuse_color: material.diffuse_color,
+            specular_color: Vec4::new(
+                material.specular_color.x,
+                material.specular_color.y,
+                material.specular_color.z,
+                material.specular_power,
+            ),
+            ..Default::default()
+        };
+
+        // TODO: How to move this into the GenericUniformBuffer type when we have
+        // additional bind group entries for the textures?
+        let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("per-submesh uniforms"),
+                contents: bytemuck::bytes_of(&values),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per-submesh bind group"), // TODO(scott): Append caller specified name
             layout: &layouts.per_submesh_layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    // 0: Diffuse texture 2d.
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                    binding: BindGroupLayouts::PER_SUBMESH_UNIFORMS_BINDING_SLOT,
+                    resource: gpu_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    // 1: Diffuse texture sampler.
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
                 },
             ],
         });
 
-        Self { bind_group }
+        Self {
+            values,
+            gpu_buffer,
+            bind_group,
+            is_dirty: std::cell::Cell::new(false),
+        }
+    }
+}
+
+impl UniformBuffer for PerSubmeshUniforms {
+    fn update_gpu(&self, queue: &wgpu::Queue) {
+        self.is_dirty.swap(&std::cell::Cell::new(false));
+        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&self.values));
     }
 
-    /// Get this object's WGPU bind group.
-    pub fn bind_group(&self) -> &wgpu::BindGroup {
+    fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty.get()
     }
 }
 
@@ -182,9 +241,9 @@ impl PerSubmeshUniforms {
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PerDebugMeshBufferData {
-    pub local_to_world: glam::Mat4,
-    pub color_tint: glam::Vec3,
-    pub _padding: [f32; 1],
+    pub local_to_world: Mat4,
+    pub color_tint: Vec3,
+    pub _padding_1: f32,
 }
 
 /// Repsonsible for storing per-debug-mesh shader uniform values and copying
@@ -204,7 +263,7 @@ impl PerDebugMeshUniforms {
                 PerDebugMeshBufferData {
                     local_to_world: Default::default(),
                     color_tint: Vec3::ONE,
-                    _padding: Default::default(),
+                    _padding_1: Default::default(),
                 },
                 &layouts.per_debug_mesh_layout,
             ),
@@ -246,6 +305,10 @@ pub struct BindGroupLayouts {
 }
 
 impl BindGroupLayouts {
+    pub const PER_SUBMESH_UNIFORMS_BINDING_SLOT: u32 = 0;
+    pub const PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT: u32 = 1;
+    pub const PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT: u32 = 2;
+
     /// Create a new bind group layout registry.
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
@@ -293,15 +356,25 @@ impl BindGroupLayouts {
     /// Gets the bind group layout describing any instance of `PerMeshUniforms`.
     ///
     /// Expected bind group inputs:
-    ///  0 - diffuse texture
-    ///  1 - diffuse sampler
+    ///  0 - uniforms
+    ///  1 - diffuse texture
+    ///  2 - diffuse sampler
     pub fn per_submesh_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             label: Some("per-mesh bind group layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    // 0: Diffuse texture 2d.
-                    binding: 0,
+                    binding: Self::PER_SUBMESH_UNIFORMS_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -311,11 +384,8 @@ impl BindGroupLayouts {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // 1: Diffuse texture sampler.
-                    binding: 1,
+                    binding: Self::PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This needs to match the filterable field for the texture
-                    // from above.
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },

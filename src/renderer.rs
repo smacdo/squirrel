@@ -4,16 +4,19 @@ mod meshes;
 mod models;
 mod passes;
 mod shaders;
+mod shading;
 mod textures;
 mod uniforms_buffers;
 
-use std::{sync::Arc, time::Duration};
+use std::rc::Rc;
+use std::time::Duration;
 
 use debug::DebugState;
 use glam::{Quat, Vec2, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use shaders::{BindGroupLayouts, PerFrameUniforms};
+use shading::{Light, Material};
 use tracing::{info, warn};
 use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
@@ -55,6 +58,7 @@ pub struct Renderer<'a> {
     // TODO(scott): extract gameplay code into separate module.
     pub camera: Camera,
     pub camera_controller: ArcballCameraController,
+    light: Light,
     models: Vec<Model>,
     pub time_to_update: f32,
     // XXX(scott): `window` must be the last field in the struct because it needs
@@ -69,9 +73,12 @@ impl<'a> Renderer<'a> {
     const STANDARD_SHADER: &'static str = include_str!("standard_shader.wgsl");
     const CAMERA_POS: Vec3 = Vec3::new(1.5, 1.0, 5.0);
     const CAMERA_LOOK_AT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
-    const OBJECT_COLOR: Vec3 = Vec3::new(1.0, 0.5, 0.31);
-    const LIGHT_POS: Vec3 = Vec3::new(1.2, 1.0, 2.0);
-    const LIGHT_COLOR: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+    const LIGHT: Light = Light {
+        position: Vec3::new(1.2, 1.0, 2.0),
+        color: Vec3::new(0.5, 0.5, 0.5),
+        ambient: 0.4,
+        specular: 1.0,
+    };
 
     pub async fn new(window: &'a Window) -> Self {
         let window_size = window.inner_size();
@@ -229,7 +236,7 @@ impl<'a> Renderer<'a> {
         // Generate a cube mesh and then spawn multiple instances of it for rendering.
         let (vertices, indices) = builtin_mesh(BuiltinMesh::Cube);
 
-        let cube_mesh = Arc::new(Mesh::new(
+        let cube_mesh = Rc::new(Mesh::new(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Cube Vertex Buffer"),
                 contents: bytemuck::cast_slice(vertices),
@@ -246,6 +253,12 @@ impl<'a> Renderer<'a> {
                 &bind_group_layouts,
                 0..indices.len() as u32,
                 0,
+                &Material {
+                    ambient_color: Vec3::new(1.0, 0.5, 0.31),
+                    diffuse_color: Vec3::new(1.0, 0.5, 0.31),
+                    specular_color: Vec3::new(0.5, 0.5, 0.5),
+                    specular_power: 32.0,
+                },
                 Texture::from_image_bytes(
                     &device,
                     &queue,
@@ -256,6 +269,8 @@ impl<'a> Renderer<'a> {
             )],
         ));
 
+        // Set up scene.
+        let light = Self::LIGHT.clone();
         let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
 
         //for initial_pos in INITIAL_CUBE_POS {
@@ -270,9 +285,7 @@ impl<'a> Renderer<'a> {
             cube_mesh.clone(),
         );
 
-        m.uniforms_mut().set_object_color(Self::OBJECT_COLOR);
-        m.uniforms_mut().set_light_position(Self::LIGHT_POS);
-        m.uniforms_mut().set_light_color(Self::LIGHT_COLOR);
+        m.uniforms_mut().set_light(&light);
 
         models.push(m);
 
@@ -281,7 +294,7 @@ impl<'a> Renderer<'a> {
         let mut light_debug_pass =
             passes::LightDebugPass::new(&device, &surface_config, &bind_group_layouts);
 
-        light_debug_pass.set_light_position(Self::LIGHT_POS);
+        light_debug_pass.set_light_position(light.position);
 
         // Initialization (hopefully) complete!
         Self {
@@ -291,6 +304,7 @@ impl<'a> Renderer<'a> {
             surface_config,
             window_size,
             render_pipeline,
+            light,
             models,
             camera,
             sys_time_elapsed: Default::default(),
@@ -353,24 +367,32 @@ impl<'a> Renderer<'a> {
         self.per_frame_uniforms.update_gpu(&self.queue);
 
         // Make the light orbit around the scene.
+        let sys_time_secs = self.sys_time_elapsed.as_secs_f32();
+
         let light_xy = rotate_around_pivot(
             Vec2::new(0.0, 0.0),
             1.0,
-            (self.sys_time_elapsed.as_secs_f32() * 24.0).to_radians(),
+            (sys_time_secs * 24.0).to_radians(),
         );
-        let new_light_pos = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
+
+        self.light.position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
+
+        // Adjust the color of the light over time.
+        self.light.color = Vec3::new(
+            f32::sin((sys_time_secs * 2.0).to_radians()),
+            f32::sin((sys_time_secs * 0.7).to_radians()),
+            f32::sin((sys_time_secs * 1.3).to_radians()),
+        );
 
         // Update uniforms for each model that will be rendered.
         for model in &mut self.models.iter_mut() {
-            model.uniforms_mut().set_light_position(new_light_pos);
-
-            if model.uniforms().is_dirty() {
-                model.uniforms().update_gpu(&self.queue);
-            }
+            model.uniforms_mut().set_light(&self.light);
+            model.prepare(&self.queue);
         }
 
         // Passes / overlays.
-        self.light_debug_pass.set_light_position(new_light_pos);
+        self.light_debug_pass
+            .set_light_position(self.light.position);
         self.light_debug_pass.prepare(&self.queue);
     }
 

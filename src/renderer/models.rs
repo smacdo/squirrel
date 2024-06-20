@@ -1,9 +1,10 @@
-use std::{ops::Range, sync::Arc};
+use std::{ops::Range, rc::Rc};
 
 use glam::{Mat4, Quat, Vec3};
 
 use super::{
     shaders::{BindGroupLayouts, PerModelUniforms, PerSubmeshUniforms},
+    shading::Material,
     textures::Texture,
     uniforms_buffers::UniformBuffer,
 };
@@ -26,7 +27,7 @@ pub struct Model {
     /// must happen prior to drawing.
     uniforms: PerModelUniforms,
     /// Reference to the shared mesh that this model will draw.
-    mesh: Arc<Mesh>,
+    mesh: Rc<Mesh>,
 }
 
 impl Model {
@@ -37,7 +38,7 @@ impl Model {
         translation: Vec3,
         rotation: Quat,
         scale: Vec3,
-        mesh: Arc<Mesh>,
+        mesh: Rc<Mesh>,
     ) -> Self {
         Self {
             translation,
@@ -49,6 +50,7 @@ impl Model {
     }
 
     /// Get model uniforms.
+    #[allow(dead_code)]
     pub fn uniforms(&mut self) -> &PerModelUniforms {
         &self.uniforms
     }
@@ -94,6 +96,13 @@ impl Model {
     #[allow(dead_code)]
     pub fn set_scale(&mut self, scale: Vec3) {
         self.set_scale_rotation_translation(scale, self.rotation, self.translation)
+    }
+
+    /// Prepare the model for rendering.
+    pub fn prepare(&self, queue: &wgpu::Queue) {
+        if self.uniforms.is_dirty() {
+            self.uniforms.update_gpu(queue);
+        }
     }
 }
 
@@ -148,9 +157,10 @@ impl Submesh {
         layouts: &BindGroupLayouts,
         indices: Range<u32>,
         base_vertex: i32,
+        material: &Material,
         diffuse_texture: Texture,
     ) -> Self {
-        let uniforms = PerSubmeshUniforms::new(device, layouts, diffuse_texture);
+        let uniforms = PerSubmeshUniforms::new(device, layouts, material, diffuse_texture);
         Self {
             uniforms,
             indices,
