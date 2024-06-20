@@ -182,6 +182,7 @@ impl Camera {
     }
 
     /// Get the camera's right axis.
+    #[allow(dead_code)]
     pub fn right(&self) -> Vec3 {
         self.right
     }

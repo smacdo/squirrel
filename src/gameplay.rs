@@ -54,6 +54,7 @@ pub struct FreeLookCameraController {
 }
 
 impl FreeLookCameraController {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             move_speed: 4.0,

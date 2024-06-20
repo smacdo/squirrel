@@ -5,6 +5,7 @@ mod camera;
 mod renderer;
 mod gameplay;
 mod platform;
+mod math_utils;
 
 use gameplay::CameraController;
 use glam::Vec2;

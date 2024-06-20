@@ -1,7 +1,9 @@
 use glam::{Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
-// TODO(scott): Add debug state to `DebugState`, then pass to here ::update + ::draw
+// TODO: Re-use the existing cube mesh, just update the shader to ignore
+//       unneeded attributes like normal.
+// TODO: Add debug state to `DebugState`, then pass to here ::update + ::draw
 
 use crate::renderer::{
     debug::{DebugVertex, CUBE_INDICES, CUBE_VERTS},
@@ -15,7 +17,7 @@ pub struct LightDebugPass {
     render_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
     cube_index_buffer: wgpu::Buffer,
-    cube_mesh_uniforms: PerDebugMeshUniforms, // TODO: Use model instancing.
+    light_cube_uniforms: Vec<PerDebugMeshUniforms>, // TODO: Use model instancing.
 }
 
 impl LightDebugPass {
@@ -40,7 +42,7 @@ impl LightDebugPass {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let cube_mesh_uniforms = PerDebugMeshUniforms::new(device, layouts);
+        let light_cube_uniforms = vec![PerDebugMeshUniforms::new(device, layouts)];
 
         // Load the shader used to render debug meshes.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -106,21 +108,27 @@ impl LightDebugPass {
             render_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
-            cube_mesh_uniforms,
+            light_cube_uniforms,
         }
+    }
+
+    /// Set the world position of the scene light.
+    pub fn set_light_position(&mut self, position: Vec3) {
+        self.light_cube_uniforms[0].set_local_to_world(Mat4::from_scale_rotation_translation(
+            Vec3::new(0.2, 0.2, 0.2),
+            Quat::IDENTITY,
+            position,
+        ))
     }
 
     /// Prepare for rendering by creating and updating all resources used during
     /// rendering.
     pub fn prepare(&mut self, queue: &wgpu::Queue) {
-        self.cube_mesh_uniforms
-            .set_local_to_world(Mat4::from_scale_rotation_translation(
-                Vec3::new(0.2, 0.2, 0.2),
-                Quat::IDENTITY,
-                Vec3::new(1.2, 1.0, 2.0),
-            ));
-
-        self.cube_mesh_uniforms.update_gpu(queue);
+        for lcu in &self.light_cube_uniforms {
+            if lcu.is_dirty() {
+                lcu.update_gpu(queue);
+            }
+        }
     }
 
     /// Draw the debug pass.
@@ -160,9 +168,9 @@ impl LightDebugPass {
         render_pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
         // Draw each debug cube mesh.
-        //for 0..1 {
-        render_pass.set_bind_group(1, self.cube_mesh_uniforms.bind_group(), &[]);
-        render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
-        //}
+        for lcu in &self.light_cube_uniforms {
+            render_pass.set_bind_group(1, lcu.bind_group(), &[]);
+            render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
+        }
     }
 }

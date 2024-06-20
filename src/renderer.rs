@@ -10,7 +10,7 @@ mod uniforms_buffers;
 use std::{sync::Arc, time::Duration};
 
 use debug::DebugState;
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec2, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use shaders::{BindGroupLayouts, PerFrameUniforms};
@@ -20,6 +20,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::gameplay::ArcballCameraController;
+use crate::math_utils::rotate_around_pivot;
 use crate::{camera::Camera, gameplay::CameraController};
 
 use textures::Texture;
@@ -55,6 +56,7 @@ pub struct Renderer<'a> {
     pub camera: Camera,
     pub camera_controller: ArcballCameraController,
     models: Vec<Model>,
+    pub time_to_update: f32,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
     // references to `window`.
@@ -65,6 +67,11 @@ pub struct Renderer<'a> {
 
 impl<'a> Renderer<'a> {
     const STANDARD_SHADER: &'static str = include_str!("standard_shader.wgsl");
+    const CAMERA_POS: Vec3 = Vec3::new(1.5, 1.0, 5.0);
+    const CAMERA_LOOK_AT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+    const OBJECT_COLOR: Vec3 = Vec3::new(1.0, 0.5, 0.31);
+    const LIGHT_POS: Vec3 = Vec3::new(1.2, 1.0, 2.0);
+    const LIGHT_COLOR: Vec3 = Vec3::new(1.0, 1.0, 1.0);
 
     pub async fn new(window: &'a Window) -> Self {
         let window_size = window.inner_size();
@@ -145,8 +152,8 @@ impl<'a> Renderer<'a> {
         // +y is up
         // +z is out of the screen.
         let camera = Camera::new(
-            Vec3::new(1.5, 1.0, 5.0),
-            Vec3::new(0.0, 0.0, 0.0),
+            Self::CAMERA_POS,
+            Self::CAMERA_LOOK_AT,
             Vec3::new(0.0, 1.0, 0.0),
             f32::to_radians(45.0),
             0.1,
@@ -263,15 +270,18 @@ impl<'a> Renderer<'a> {
             cube_mesh.clone(),
         );
 
-        m.uniforms_mut().set_object_color(Vec3::new(1.0, 0.5, 0.31));
-        m.uniforms_mut().set_light_color(Vec3::new(1.0, 1.0, 1.0));
+        m.uniforms_mut().set_object_color(Self::OBJECT_COLOR);
+        m.uniforms_mut().set_light_position(Self::LIGHT_POS);
+        m.uniforms_mut().set_light_color(Self::LIGHT_COLOR);
 
         models.push(m);
 
         // Set up additional render passes.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);
-        let light_debug_pass =
+        let mut light_debug_pass =
             passes::LightDebugPass::new(&device, &surface_config, &bind_group_layouts);
+
+        light_debug_pass.set_light_position(Self::LIGHT_POS);
 
         // Initialization (hopefully) complete!
         Self {
@@ -290,6 +300,7 @@ impl<'a> Renderer<'a> {
             light_debug_pass,
             debug_state: Default::default(),
             window,
+            time_to_update: 0.0,
         }
     }
 
@@ -335,17 +346,31 @@ impl<'a> Renderer<'a> {
 
         self.per_frame_uniforms
             .set_view_projection(self.camera.view_projection_matrix());
+        self.per_frame_uniforms.set_view_pos(self.camera.eye());
         self.per_frame_uniforms
             .set_time_elapsed_seconds(self.sys_time_elapsed);
 
         self.per_frame_uniforms.update_gpu(&self.queue);
 
+        // Make the light orbit around the scene.
+        let light_xy = rotate_around_pivot(
+            Vec2::new(0.0, 0.0),
+            1.0,
+            (self.sys_time_elapsed.as_secs_f32() * 24.0).to_radians(),
+        );
+        let new_light_pos = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
+
         // Update uniforms for each model that will be rendered.
         for model in &mut self.models.iter_mut() {
-            model.uniforms_mut().update_gpu(&self.queue);
+            model.uniforms_mut().set_light_position(new_light_pos);
+
+            if model.uniforms().is_dirty() {
+                model.uniforms().update_gpu(&self.queue);
+            }
         }
 
         // Passes / overlays.
+        self.light_debug_pass.set_light_position(new_light_pos);
         self.light_debug_pass.prepare(&self.queue);
     }
 

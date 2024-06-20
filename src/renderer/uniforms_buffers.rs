@@ -24,7 +24,7 @@ pub trait UniformBuffer {
 #[derive(Debug)]
 pub struct GenericUniformBuffer<T>
 where
-    T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable,
+    T: Clone + Copy + std::fmt::Debug + bytemuck::Pod + bytemuck::Zeroable,
 {
     /// The values stored in this uniform buffer.
     values: T,
@@ -39,7 +39,7 @@ where
 
 impl<T> GenericUniformBuffer<T>
 where
-    T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable,
+    T: Clone + Copy + std::fmt::Debug + bytemuck::Pod + bytemuck::Zeroable,
 {
     /// Create a new generic uniform buffer.
     ///
@@ -93,11 +93,11 @@ where
 
 impl<T> UniformBuffer for GenericUniformBuffer<T>
 where
-    T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable,
+    T: Clone + Copy + std::fmt::Debug + bytemuck::Pod + bytemuck::Zeroable,
 {
     fn update_gpu(&self, queue: &wgpu::Queue) {
         self.is_dirty.swap(&Cell::new(false));
-        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&[self.values]));
+        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&self.values));
     }
 
     fn bind_group(&self) -> &wgpu::BindGroup {

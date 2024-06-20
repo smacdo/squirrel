@@ -1,4 +1,4 @@
-use glam::Vec3;
+use glam::{Vec3, Vec3Swizzles, Vec4};
 
 use super::{
     textures::Texture,
@@ -13,9 +13,10 @@ use super::{
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
+    pub view_pos: glam::Vec4,
     pub time_elapsed_seconds: f32,
     pub output_is_srgb: u32,
-    pub _padding: [f32; 2],
+    pub _padding_2: [f32; 2],
 }
 
 /// Repsonsible for storing per-frame shader uniform values and copying them to
@@ -41,6 +42,11 @@ impl PerFrameUniforms {
     /// Set view projection matrix.
     pub fn set_view_projection(&mut self, view_projection: glam::Mat4) {
         self.buffer.values_mut().view_projection = view_projection;
+    }
+
+    /// Set the world space position of the camera.
+    pub fn set_view_pos(&mut self, view_pos: glam::Vec3) {
+        self.buffer.values_mut().view_pos = Vec4::new(view_pos.x, view_pos.y, view_pos.z, 1.0);
     }
 
     /// Set time elapsed in seconds.
@@ -74,8 +80,11 @@ impl UniformBuffer for PerFrameUniforms {
 pub struct PerModelBufferData {
     pub local_to_world: glam::Mat4,
     pub object_color: glam::Vec3,
+    pub _padding_0: f32,
     pub light_color: glam::Vec3,
-    pub _padding: [f32; 2],
+    pub _padding_1: f32,
+    pub light_position: glam::Vec3,
+    pub _padding_2: f32,
 }
 
 /// Repsonsible for storing per-model shader uniform values and copying them to
@@ -99,6 +108,7 @@ impl PerModelUniforms {
     }
 
     /// Set local to world transform matrix.
+    #[allow(dead_code)]
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
         self.buffer.values_mut().local_to_world = local_to_world;
     }
@@ -111,6 +121,12 @@ impl PerModelUniforms {
     /// Set the light color.
     pub fn set_light_color(&mut self, color: Vec3) {
         self.buffer.values_mut().light_color = color;
+    }
+
+    /// Set the light world position.
+    #[allow(dead_code)]
+    pub fn set_light_position(&mut self, position: Vec3) {
+        self.buffer.values_mut().light_position = position;
     }
 }
 
@@ -137,7 +153,7 @@ pub struct PerSubmeshUniforms {
 impl PerSubmeshUniforms {
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, texture: Texture) -> Self {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("per-model bind group"), // TODO(scott): Append caller specified name
+            label: Some("per-submesh bind group"), // TODO(scott): Append caller specified name
             layout: &layouts.per_submesh_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -190,7 +206,7 @@ impl PerDebugMeshUniforms {
                     color_tint: Vec3::ONE,
                     _padding: Default::default(),
                 },
-                &layouts.per_model_layout,
+                &layouts.per_debug_mesh_layout,
             ),
         }
     }
@@ -201,6 +217,7 @@ impl PerDebugMeshUniforms {
     }
 
     /// Set tint color.
+    #[allow(dead_code)]
     pub fn set_color_tint(&mut self, color: glam::Vec3) {
         self.buffer.values_mut().color_tint = color;
     }

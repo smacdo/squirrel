@@ -13,6 +13,7 @@ use super::{
 
 /// A model is an instance of a mesh with its own state. Models can be drawn by
 /// the renderer.
+#[allow(dead_code)]
 pub struct Model {
     /// The world position of this model.
     translation: Vec3,
@@ -58,6 +59,7 @@ impl Model {
     }
 
     /// Set position, rotation and scale of this model.
+    #[allow(dead_code)]
     pub fn set_scale_rotation_translation(
         &mut self,
         scale: Vec3,
@@ -77,16 +79,19 @@ impl Model {
     }
 
     /// Set the position of this model.
+    #[allow(dead_code)]
     pub fn set_translation(&mut self, translation: Vec3) {
         self.set_scale_rotation_translation(self.scale, self.rotation, translation)
     }
 
     /// Set the rotation of the model.
+    #[allow(dead_code)]
     pub fn set_rotation(&mut self, rotation: Quat) {
         self.set_scale_rotation_translation(self.scale, rotation, self.translation)
     }
 
     /// Set the scale of the model.
+    #[allow(dead_code)]
     pub fn set_scale(&mut self, scale: Vec3) {
         self.set_scale_rotation_translation(scale, self.rotation, self.translation)
     }
@@ -166,9 +171,9 @@ where
 {
     fn draw_model(&mut self, model: &'a Model) {
         // Bind the per-model uniforms for this model before drawing the mesh.
-        debug_assert!(!model.uniforms.buffer.is_dirty());
+        debug_assert!(!model.uniforms.is_dirty());
 
-        self.set_bind_group(1, model.uniforms.buffer.bind_group(), &[]);
+        self.set_bind_group(1, model.uniforms.bind_group(), &[]);
         self.draw_mesh(&model.mesh);
     }
 
