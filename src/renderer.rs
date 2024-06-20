@@ -26,8 +26,6 @@ use crate::gameplay::ArcballCameraController;
 use crate::math_utils::rotate_around_pivot;
 use crate::{camera::Camera, gameplay::CameraController};
 
-use textures::Texture;
-
 const INITIAL_CUBE_POS: &[Vec3] = &[
     Vec3::new(0.0, 0.0, 0.0),
     Vec3::new(2.0, 5.0, -15.0),
@@ -257,7 +255,7 @@ impl<'a> Renderer<'a> {
                     ambient_color: Vec3::new(1.0, 0.5, 0.31),
                     diffuse_color: Vec3::new(1.0, 1.0, 1.0),
                     diffuse_map: Rc::new(
-                        Texture::from_image_bytes(
+                        textures::from_image_bytes(
                             &device,
                             &queue,
                             include_bytes!("assets/crate_diffuse.dds"),
@@ -267,7 +265,7 @@ impl<'a> Renderer<'a> {
                     ),
                     specular_color: Vec3::new(1.0, 1.0, 1.0),
                     specular_map: Rc::new(
-                        Texture::from_image_bytes(
+                        textures::from_image_bytes(
                             &device,
                             &queue,
                             include_bytes!("assets/crate_specular.dds"),

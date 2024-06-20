@@ -2,6 +2,7 @@ use glam::{Mat4, Vec3, Vec4};
 
 use super::{
     shading::{Light, Material},
+    textures,
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
 
@@ -157,6 +158,9 @@ pub struct PerSubmeshBufferData {
 /// rendering pass.
 #[derive(Debug)]
 pub struct PerSubmeshUniforms {
+    _diffuse_view: wgpu::TextureView,
+    _specular_view: wgpu::TextureView,
+    _tex_sampler: wgpu::Sampler,
     values: PerSubmeshBufferData,
     gpu_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
@@ -165,6 +169,17 @@ pub struct PerSubmeshUniforms {
 
 impl PerSubmeshUniforms {
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, material: &Material) -> Self {
+        // TODO: How to move this into the GenericUniformBuffer type when we have
+        // additional bind group entries for the textures?
+
+        let diffuse_view = material
+            .diffuse_map
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let specular_view = material
+            .specular_map
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let tex_sampler = textures::create_default_sampler(device);
+
         let values = PerSubmeshBufferData {
             ambient_color: material.ambient_color,
             diffuse_color: material.diffuse_color,
@@ -177,8 +192,6 @@ impl PerSubmeshUniforms {
             ..Default::default()
         };
 
-        // TODO: How to move this into the GenericUniformBuffer type when we have
-        // additional bind group entries for the textures?
         let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,
             &wgpu::util::BufferInitDescriptor {
@@ -198,19 +211,15 @@ impl PerSubmeshUniforms {
                 },
                 wgpu::BindGroupEntry {
                     binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT,
-                    resource: wgpu::BindingResource::TextureView(&material.diffuse_map.view),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: BindGroupLayouts::PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT,
-                    resource: wgpu::BindingResource::TextureView(&material.specular_map.view),
+                    resource: wgpu::BindingResource::TextureView(&specular_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT,
-                    resource: wgpu::BindingResource::Sampler(&material.diffuse_map.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_SPECULAR_SAMPLER_BINDING_SLOT,
-                    resource: wgpu::BindingResource::Sampler(&material.specular_map.sampler),
+                    binding: BindGroupLayouts::PER_SUBMESH_SAMPLER_BINDING_SLOT,
+                    resource: wgpu::BindingResource::Sampler(&tex_sampler),
                 },
             ],
         });
@@ -220,6 +229,9 @@ impl PerSubmeshUniforms {
             gpu_buffer,
             bind_group,
             is_dirty: std::cell::Cell::new(false),
+            _diffuse_view: diffuse_view,
+            _specular_view: specular_view,
+            _tex_sampler: tex_sampler,
         }
     }
 }
@@ -311,8 +323,7 @@ impl BindGroupLayouts {
     pub const PER_SUBMESH_UNIFORMS_BINDING_SLOT: u32 = 0;
     pub const PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT: u32 = 1;
     pub const PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT: u32 = 2;
-    pub const PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT: u32 = 3;
-    pub const PER_SUBMESH_SPECULAR_SAMPLER_BINDING_SLOT: u32 = 4;
+    pub const PER_SUBMESH_SAMPLER_BINDING_SLOT: u32 = 3;
 
     /// Create a new bind group layout registry.
     pub fn new(device: &wgpu::Device) -> Self {
@@ -401,13 +412,7 @@ impl BindGroupLayouts {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_SPECULAR_SAMPLER_BINDING_SLOT,
+                    binding: Self::PER_SUBMESH_SAMPLER_BINDING_SLOT,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,

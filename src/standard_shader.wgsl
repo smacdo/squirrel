@@ -64,10 +64,7 @@ var diffuse_texture: texture_2d<f32>;
 var specular_texture: texture_2d<f32>;
 
 @group(2) @binding(3)
-var diffuse_sampler: sampler;
-
-@group(2) @binding(4) // TODO: eliminate
-var specular_sampler: sampler;
+var tex_sampler: sampler;
 
 @vertex
 fn vs_main(v_in: VertexInput) -> VertexOutput {
@@ -87,8 +84,8 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
 fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample the diffuse and specular texture maps. For materials that do not
     // have an associated texture map use a default 1x1 white pixel.
-    let diffuse_tex_color = textureSample(diffuse_texture, diffuse_sampler, v_in.tex_coords).xyz;
-    let specular_tex_color = textureSample(specular_texture, specular_sampler, v_in.tex_coords).xyz;
+    let diffuse_tex_color = textureSample(diffuse_texture, tex_sampler, v_in.tex_coords).xyz;
+    let specular_tex_color = textureSample(specular_texture, tex_sampler, v_in.tex_coords).xyz;
 
     // Unpack lighting into separate variables.
     let light_pos = per_model.light_pos.xyz;

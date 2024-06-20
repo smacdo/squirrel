@@ -2,15 +2,13 @@ use std::rc::Rc;
 
 use glam::Vec3;
 
-use super::textures::Texture;
-
 #[derive(Clone, Debug)]
 pub struct Material {
     pub ambient_color: Vec3,
     pub diffuse_color: Vec3,
-    pub diffuse_map: Rc<Texture>,
+    pub diffuse_map: Rc<wgpu::Texture>,
     pub specular_color: Vec3,
-    pub specular_map: Rc<Texture>,
+    pub specular_map: Rc<wgpu::Texture>,
     pub specular_power: f32,
 }
 
