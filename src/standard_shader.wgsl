@@ -59,8 +59,15 @@ var<uniform> per_submesh: PerSubmeshUniforms;
 
 @group(2) @binding(1)
 var diffuse_texture: texture_2d<f32>;
+
 @group(2) @binding(2)
+var specular_texture: texture_2d<f32>;
+
+@group(2) @binding(3)
 var diffuse_sampler: sampler;
+
+@group(2) @binding(4) // TODO: eliminate
+var specular_sampler: sampler;
 
 @vertex
 fn vs_main(v_in: VertexInput) -> VertexOutput {
@@ -73,16 +80,15 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
     v_out.normal = (transpose(per_model.world_to_local) * vec4<f32>(v_in.normal, 1.0)).xyz;
     v_out.tex_coords = v_in.tex_coords;
 
-
     return v_out;
 }
 
 @fragment
 fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
-    // TODO: Restore the old shader code once lighting implementation completed.
-    //let tex_color = textureSample(diffuse_texture, diffuse_sampler, v_in.tex_coords);
-    //let vert_color = vec4<f32>(v_in.color, 1.0);
-    //let frag_color = tex_color * vert_color;
+    // Sample the diffuse and specular texture maps. For materials that do not
+    // have an associated texture map use a default 1x1 white pixel.
+    let diffuse_tex_color = textureSample(diffuse_texture, diffuse_sampler, v_in.tex_coords).xyz;
+    let specular_tex_color = textureSample(specular_texture, specular_sampler, v_in.tex_coords).xyz;
 
     // Unpack lighting into separate variables.
     let light_pos = per_model.light_pos.xyz;
@@ -91,20 +97,30 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     let light_specular = per_model.light_color.w;
 
     // Ambient lighting.
-    let ambient_color = light_color * light_ambient * per_submesh.ambient_color;
+    let ambient_color = light_color 
+        * light_ambient
+        * per_submesh.ambient_color
+        * diffuse_tex_color;
 
     // Diffuse lighting.
     // The light direction is a vector pointing from this fragment to the light.
     let normal = normalize(v_in.normal);
     let light_dir = normalize(light_pos - v_in.position_ws);
     let diffuse_amount = max(dot(normal, light_dir), 0.0);
-    let diffuse_color = light_color * diffuse_amount * per_submesh.diffuse_color;
+    let diffuse_color = light_color
+        * diffuse_amount
+        * per_submesh.diffuse_color
+        * diffuse_tex_color;
 
     // Specular lighting.
     let view_dir = normalize(per_frame.view_pos.xyz - v_in.position_ws);
     let reflect_dir = reflect(-light_dir, normal);
     let specular_amount = pow(max(dot(view_dir, reflect_dir), 0.0), per_submesh.specular_color.w);
-    let specular_color = vec3<f32>(1.0) * light_specular * specular_amount * per_submesh.specular_color.xyz;
+    let specular_color = vec3<f32>(1.0) 
+        * light_specular
+        * specular_amount
+        * per_submesh.specular_color.xyz
+        * specular_tex_color;
 
     // Final color is an additive combination of ambient, diffuse and specular.
     let frag_color = vec4<f32>(ambient_color + diffuse_color + specular_color, 1.0);

@@ -1,5 +1,5 @@
 use anyhow::*;
-use image::GenericImageView;
+use image::{GenericImageView, Rgba, RgbaImage};
 
 // TODO: Allow customization of texture parameters either with custom types
 //       or allow passing in of `wgpu::Texture` / `wgpu::Sampler`.
@@ -7,7 +7,11 @@ use image::GenericImageView;
 // TODO: Add ability to recreate the texture view or sampler on demand, eg for
 //       "reload when changed" functionality.
 
+// TODO: Don't bind sampler and view together so tightly. Need to refactor all of this.
+// (eg I want to have diffuse view, specular view and single sampler for both).
+
 /// Stores a WGPU texture along with its associated view and sampler.
+#[derive(Debug)]
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -15,8 +19,21 @@ pub struct Texture {
 }
 
 impl Texture {
+    /// [255, 255, 255] for white.
+    pub fn new_1x1(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        color: [u8; 3],
+        label: Option<&str>,
+    ) -> Result<Self> {
+        let mut image = RgbaImage::new(1, 1);
+        image.put_pixel(0, 0, Rgba([color[0], color[1], color[2], 255]));
+        Self::from_image(device, queue, image.into(), label)
+    }
+
     /// Construct a texture represented by `image_bytes` which must be a JPEG,
     /// PNG or DDS image.
+    #[allow(dead_code)]
     pub fn from_image_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -24,13 +41,13 @@ impl Texture {
         label: Option<&str>,
     ) -> Result<Self> {
         let image = image::load_from_memory(image_bytes)?;
-        Self::from_image(device, queue, &image, label)
+        Self::from_image(device, queue, image, label)
     }
 
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        image: &image::DynamicImage,
+        image: image::DynamicImage,
         label: Option<&str>,
     ) -> Result<Self> {
         let rgba = image.to_rgba8();

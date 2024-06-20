@@ -255,19 +255,38 @@ impl<'a> Renderer<'a> {
                 0,
                 &Material {
                     ambient_color: Vec3::new(1.0, 0.5, 0.31),
-                    diffuse_color: Vec3::new(1.0, 0.5, 0.31),
-                    specular_color: Vec3::new(0.5, 0.5, 0.5),
+                    diffuse_color: Vec3::new(1.0, 1.0, 1.0),
+                    diffuse_map: Rc::new(
+                        Texture::from_image_bytes(
+                            &device,
+                            &queue,
+                            include_bytes!("assets/crate_diffuse.dds"),
+                            Some("crate diffuse texture"),
+                        )
+                        .unwrap(),
+                    ),
+                    specular_color: Vec3::new(1.0, 1.0, 1.0),
+                    specular_map: Rc::new(
+                        Texture::from_image_bytes(
+                            &device,
+                            &queue,
+                            include_bytes!("assets/crate_specular.dds"),
+                            Some("crate specular texture"),
+                        )
+                        .unwrap(),
+                    ),
                     specular_power: 32.0,
                 },
-                Texture::from_image_bytes(
-                    &device,
-                    &queue,
-                    include_bytes!("assets/test.png"),
-                    Some("diffuse texture"),
-                )
-                .unwrap(),
             )],
         ));
+
+        // TODO: Test 1x1 map
+        /*
+        Texture::new_1x1(&device, &queue, [1, 1, 1], Some("none material texture"))
+                            .unwrap()
+
+
+         */
 
         // Set up scene.
         let light = Self::LIGHT.clone();
@@ -376,13 +395,6 @@ impl<'a> Renderer<'a> {
         );
 
         self.light.position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
-
-        // Adjust the color of the light over time.
-        self.light.color = Vec3::new(
-            f32::sin((sys_time_secs * 2.0).to_radians()),
-            f32::sin((sys_time_secs * 0.7).to_radians()),
-            f32::sin((sys_time_secs * 1.3).to_radians()),
-        );
 
         // Update uniforms for each model that will be rendered.
         for model in &mut self.models.iter_mut() {

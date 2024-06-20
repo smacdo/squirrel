@@ -5,7 +5,6 @@ use glam::{Mat4, Quat, Vec3};
 use super::{
     shaders::{BindGroupLayouts, PerModelUniforms, PerSubmeshUniforms},
     shading::Material,
-    textures::Texture,
     uniforms_buffers::UniformBuffer,
 };
 
@@ -158,9 +157,8 @@ impl Submesh {
         indices: Range<u32>,
         base_vertex: i32,
         material: &Material,
-        diffuse_texture: Texture,
     ) -> Self {
-        let uniforms = PerSubmeshUniforms::new(device, layouts, material, diffuse_texture);
+        let uniforms = PerSubmeshUniforms::new(device, layouts, material);
         Self {
             uniforms,
             indices,

@@ -2,7 +2,6 @@ use glam::{Mat4, Vec3, Vec4};
 
 use super::{
     shading::{Light, Material},
-    textures::Texture,
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
 
@@ -165,12 +164,7 @@ pub struct PerSubmeshUniforms {
 }
 
 impl PerSubmeshUniforms {
-    pub fn new(
-        device: &wgpu::Device,
-        layouts: &BindGroupLayouts,
-        material: &Material,
-        diffuse_texture: Texture,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, material: &Material) -> Self {
         let values = PerSubmeshBufferData {
             ambient_color: material.ambient_color,
             diffuse_color: material.diffuse_color,
@@ -204,11 +198,19 @@ impl PerSubmeshUniforms {
                 },
                 wgpu::BindGroupEntry {
                     binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&material.diffuse_map.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: BindGroupLayouts::PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT,
+                    resource: wgpu::BindingResource::TextureView(&material.specular_map.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&material.diffuse_map.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: BindGroupLayouts::PER_SUBMESH_SPECULAR_SAMPLER_BINDING_SLOT,
+                    resource: wgpu::BindingResource::Sampler(&material.specular_map.sampler),
                 },
             ],
         });
@@ -305,9 +307,12 @@ pub struct BindGroupLayouts {
 }
 
 impl BindGroupLayouts {
+    // TODO: Merge multiple sampler views into one.
     pub const PER_SUBMESH_UNIFORMS_BINDING_SLOT: u32 = 0;
     pub const PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT: u32 = 1;
-    pub const PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT: u32 = 2;
+    pub const PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT: u32 = 2;
+    pub const PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT: u32 = 3;
+    pub const PER_SUBMESH_SPECULAR_SAMPLER_BINDING_SLOT: u32 = 4;
 
     /// Create a new bind group layout registry.
     pub fn new(device: &wgpu::Device) -> Self {
@@ -358,7 +363,9 @@ impl BindGroupLayouts {
     /// Expected bind group inputs:
     ///  0 - uniforms
     ///  1 - diffuse texture
-    ///  2 - diffuse sampler
+    ///  2 - specular texture
+    ///  3 - diffuse sampler
+    ///  4 - specular sampler (TODO: eliminate this)
     pub fn per_submesh_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             label: Some("per-mesh bind group layout"),
@@ -384,7 +391,23 @@ impl BindGroupLayouts {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
+                    binding: Self::PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
                     binding: Self::PER_SUBMESH_DIFFUSE_SAMPLER_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::PER_SUBMESH_SPECULAR_SAMPLER_BINDING_SLOT,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
