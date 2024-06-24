@@ -8,6 +8,7 @@ use wgpu::util::DeviceExt;
 use crate::renderer::{
     debug::{DebugVertex, CUBE_INDICES, CUBE_VERTS},
     shaders::{BindGroupLayouts, PerDebugMeshUniforms, PerFrameUniforms},
+    shading::PointLight,
     uniforms_buffers::UniformBuffer,
 };
 
@@ -113,11 +114,11 @@ impl LightDebugPass {
     }
 
     /// Set the world position of the scene light.
-    pub fn set_light_position(&mut self, position: Vec3) {
+    pub fn set_point_light(&mut self, light: &PointLight) {
         self.light_cube_uniforms[0].set_local_to_world(Mat4::from_scale_rotation_translation(
             Vec3::new(0.2, 0.2, 0.2),
             Quat::IDENTITY,
-            position,
+            light.position,
         ))
     }
 

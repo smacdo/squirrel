@@ -16,7 +16,7 @@ use glam::{Quat, Vec2, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use shaders::{BindGroupLayouts, PerFrameUniforms};
-use shading::{Light, Material};
+use shading::{DirectionalLight, Material, PointLight};
 use tracing::{info, warn};
 use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
@@ -56,7 +56,8 @@ pub struct Renderer<'a> {
     // TODO(scott): extract gameplay code into separate module.
     pub camera: Camera,
     pub camera_controller: ArcballCameraController,
-    light: Light,
+    point_light: PointLight,
+    directional_light: DirectionalLight,
     models: Vec<Model>,
     pub time_to_update: f32,
     // XXX(scott): `window` must be the last field in the struct because it needs
@@ -71,8 +72,14 @@ impl<'a> Renderer<'a> {
     const STANDARD_SHADER: &'static str = include_str!("standard_shader.wgsl");
     const CAMERA_POS: Vec3 = Vec3::new(1.5, 1.0, 5.0);
     const CAMERA_LOOK_AT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
-    const LIGHT: Light = Light {
+    const POINT_LIGHT: PointLight = PointLight {
         position: Vec3::new(1.2, 1.0, 2.0),
+        color: Vec3::new(0.5, 0.5, 0.5),
+        ambient: 0.2,
+        specular: 1.0,
+    };
+    const DIRECTIONAL_LIGHT: DirectionalLight = DirectionalLight {
+        direction: Vec3::new(-0.2, -1.0, -0.3),
         color: Vec3::new(0.5, 0.5, 0.5),
         ambient: 0.2,
         specular: 1.0,
@@ -288,7 +295,8 @@ impl<'a> Renderer<'a> {
         ));
 
         // Set up scene.
-        let light = Self::LIGHT.clone();
+        let point_light = Self::POINT_LIGHT.clone();
+        let directional_light = Self::DIRECTIONAL_LIGHT.clone();
         let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
 
         for initial_pos in INITIAL_CUBE_POS {
@@ -307,7 +315,7 @@ impl<'a> Renderer<'a> {
         let mut light_debug_pass =
             passes::LightDebugPass::new(&device, &surface_config, &bind_group_layouts);
 
-        light_debug_pass.set_light_position(light.position);
+        light_debug_pass.set_point_light(&point_light);
 
         // Initialization (hopefully) complete!
         Self {
@@ -317,7 +325,8 @@ impl<'a> Renderer<'a> {
             surface_config,
             window_size,
             render_pipeline,
-            light,
+            point_light,
+            directional_light,
             models,
             camera,
             sys_time_elapsed: Default::default(),
@@ -375,6 +384,8 @@ impl<'a> Renderer<'a> {
             .set_view_projection(self.camera.view_projection_matrix());
         self.per_frame_uniforms.set_view_pos(self.camera.eye());
         self.per_frame_uniforms
+            .set_directional_light(&self.directional_light);
+        self.per_frame_uniforms
             .set_time_elapsed_seconds(self.sys_time_elapsed);
 
         self.per_frame_uniforms.update_gpu(&self.queue);
@@ -388,17 +399,16 @@ impl<'a> Renderer<'a> {
             (sys_time_secs * 24.0).to_radians(),
         );
 
-        self.light.position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
+        self.point_light.position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
 
         // Update uniforms for each model that will be rendered.
         for model in &mut self.models.iter_mut() {
-            model.uniforms_mut().set_light(&self.light);
+            model.uniforms_mut().set_point_light(&self.point_light);
             model.prepare(&self.queue);
         }
 
         // Passes / overlays.
-        self.light_debug_pass
-            .set_light_position(self.light.position);
+        self.light_debug_pass.set_point_light(&self.point_light);
         self.light_debug_pass.prepare(&self.queue);
     }
 

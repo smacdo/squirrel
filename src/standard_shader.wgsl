@@ -1,6 +1,11 @@
+// TODO: Consider using structs to represent the packed lighting data, and 
+// structs to represent unpacked lights/materials. Refactor the functions to
+// take those parameters which should make this all a lot less confusing.
 struct PerFrameUniforms {
     view_projection: mat4x4<f32>,
     view_pos: vec4<f32>,
+    light_dir: vec4<f32>, // directional light, .w is ambient amount.
+    light_color: vec4<f32>, // directional light, .w is specular amount.
     time_elapsed_seconds: f32,
     output_is_srgb: u32, // TODO(scott): Pack bit flags in here.
 };
@@ -8,8 +13,8 @@ struct PerFrameUniforms {
 struct PerModelUniforms {
     local_to_world: mat4x4<f32>,
     world_to_local: mat4x4<f32>,
-    light_pos: vec4<f32>,   // .w is specular whiteness amount
-    light_color: vec4<f32>, // .w is ambient amount
+    light_pos: vec4<f32>,   // .w is ambient amount
+    light_color: vec4<f32>, // .w is specular amount
 }
 
 struct PerSubmeshUniforms {
@@ -85,6 +90,8 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
+    let frag_normal = normalize(v_in.normal);
+
     // Sample the diffuse and specular texture maps. For materials that do not
     // have an associated texture map use a default 1x1 white pixel. Use a 1x1
     // black pixel to default the emissive map.
@@ -92,45 +99,53 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     let specular_tex_color = textureSample(specular_texture, tex_sampler, v_in.tex_coords).xyz;
     let emissive_tex_color = textureSample(emissive_texture, tex_sampler, v_in.tex_coords).xyz;
 
-    // Unpack lighting into separate variables.
+    // Directional lighting.
+    //  Need to invert direction beecause directional light is specified as dir
+    //  from light source towards fragment but lighting function expects it to
+    //  be fragment to light.
+    let dir_light_dir = normalize(-per_frame.light_dir.xyz);
+    let dir_light_color = per_frame.light_color.xyz;
+    let dir_ambient_contrib = per_frame.light_dir.w;
+    let dir_specular_contrib = per_frame.light_color.w;
+
+    var frag_color = vec4<f32>(directional_light(
+        v_in.position_ws,        // fragment world space position
+        frag_normal,             // fragment normal direction (normalized)
+        per_frame.view_pos.xyz,  // camera world space position
+        dir_light_dir,           // fragment to directional light direction (normalized)
+        dir_light_color,         // color of directional light
+        dir_ambient_contrib,     // amount of ambient contribution
+        1.0,                     // amount of diffuse contribution
+        dir_specular_contrib,    // amount of specular contribution
+        diffuse_tex_color * per_submesh.ambient_color,       // material ambient color
+        diffuse_tex_color * per_submesh.diffuse_color,       // material diffuse color
+        specular_tex_color * per_submesh.specular_color.xyz, // material specular color
+        per_submesh.specular_color.w, // material specular shininess
+        emissive_tex_color            // material emissive color
+    ), 1.0);
+
+    // Point lighting.
+    // NOTE: this isn't really point lights as they lack falloff parameters.
     let light_pos = per_model.light_pos.xyz;
     let light_color = per_model.light_color.xyz;
-    let light_ambient = per_model.light_pos.w;
-    let light_specular = per_model.light_color.w;
+    let light_ambient_contrib = per_model.light_pos.w;
+    let light_specular_contrib = per_model.light_color.w;
 
-    // Ambient lighting.
-    let ambient_color = light_color 
-        * light_ambient
-        * per_submesh.ambient_color
-        * diffuse_tex_color;
-
-    // Diffuse lighting.
-    // The light direction is a vector pointing from this fragment to the light.
-    let normal = normalize(v_in.normal);
-    let light_dir = normalize(light_pos - v_in.position_ws);
-    let diffuse_amount = max(dot(normal, light_dir), 0.0);
-    let diffuse_color = light_color
-        * diffuse_amount
-        * per_submesh.diffuse_color
-        * diffuse_tex_color;
-
-    // Specular lighting.
-    let view_dir = normalize(per_frame.view_pos.xyz - v_in.position_ws);
-    let reflect_dir = reflect(-light_dir, normal);
-    let specular_amount = pow(max(dot(view_dir, reflect_dir), 0.0), per_submesh.specular_color.w);
-    let specular_color = vec3<f32>(1.0) 
-        * light_specular
-        * specular_amount
-        * per_submesh.specular_color.xyz
-        * specular_tex_color;
-
-    // Final color is an additive combination of ambient, diffuse and specular.
-    let frag_color = vec4<f32>(ambient_color
-            + diffuse_color
-            + specular_color
-            + emissive_tex_color,
-        1.0
-    );
+    frag_color += vec4<f32>(point_light(
+        v_in.position_ws,        // fragment world space position
+        frag_normal,             // fragment normal direction (normalized)
+        per_frame.view_pos.xyz,  // camera world space position
+        light_pos,               // point light world space position
+        light_color,             // color of point light
+        light_ambient_contrib,   // amount of ambient contribution
+        1.0,                     // amount of diffuse contribution
+        light_specular_contrib,  // amount of specular contribution
+        diffuse_tex_color * per_submesh.ambient_color,       // material ambient color
+        diffuse_tex_color * per_submesh.diffuse_color,       // material diffuse color
+        specular_tex_color * per_submesh.specular_color.xyz, // material specular color
+        per_submesh.specular_color.w, // material specular shininess
+        emissive_tex_color            // material emissive color
+    ), 1.0);
 
     // Should the color be converted from linear to sRGB in the pixel shader?
     // Otherwise simply return it in lienar space.
@@ -139,6 +154,179 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     } else {
         return frag_color;
     }
+}
+
+/// Calculate the color contribution from a directional light for a given 
+//// material.
+///
+///  `frag_pos`:  Fragment world space position.
+///  `frag_normal`: Fragment normal vector direction (normalized).
+///  `view_pos`: Camera world space position.
+///  `light_dir`: Normalized direction from fragment towards the light source.
+///  `light_color`: Color of the light.
+///  `light_ambient_contrib`: Ambient lighting modifier [0 = none, 1 = full].
+///  `light_diffuse_contrib`: Diffuse lighting modifier [0 = none, 1 = full].
+///  `light_specular_contrib`: Specular lighting modifier [0 = none, 1 = full].
+///  `mat_ambient_color`: Material ambient color.
+///  `mat_diffuse_color`: Material diffuse color.
+///  `mat_specular_color`: Material specular color.
+///  `mat_shininess`: Material shininess amount.
+///  `mat_emissive`: Material emissive color.
+fn directional_light(
+        frag_pos: vec3<f32>,
+        frag_normal: vec3<f32>,
+        view_pos: vec3<f32>,
+        light_dir: vec3<f32>,
+        light_color: vec3<f32>,
+        light_ambient_contrib: f32,
+        light_diffuse_contrib: f32,
+        light_specular_contrib: f32,
+        mat_ambient_color: vec3<f32>,
+        mat_diffuse_color: vec3<f32>,
+        mat_specular_color: vec3<f32>,
+        mat_shininess: f32,
+        mat_emissive: vec3<f32>,
+) -> vec3<f32> {
+    // Ambient.
+    let ambient_color = light_color 
+        * light_ambient_contrib
+        * mat_ambient_color;
+
+    // Diffuse.
+    let diffuse_color = light_diffuse(
+        frag_normal,
+        light_dir,
+        light_color,
+        light_diffuse_contrib,
+        mat_diffuse_color
+    );
+
+    // Specular lighting.
+    let view_dir = normalize(view_pos - frag_pos);
+    let specular_color = light_specular(
+        frag_normal,
+        view_dir,
+        light_dir,
+        vec3<f32>(1.0),
+        light_specular_contrib,
+        mat_specular_color,
+        mat_shininess
+    );
+
+    // Final color is an additive combination of ambient, diffuse and specular.
+    return ambient_color
+        + diffuse_color
+        + specular_color
+        + mat_emissive;
+}
+
+/// Calculate the color contribution from a point light for a given material.
+///
+///  `frag_pos`:  Fragment world space position.
+///  `frag_normal`: Fragment normal vector direction (normalized).
+///  `view_pos`: Camera world space position.
+///  `light_pos`: World space position of the light.
+///  `light_color`: Color of the light.
+///  `light_ambient_contrib`: Ambient lighting modifier [0 = none, 1 = full].
+///  `light_diffuse_contrib`: Diffuse lighting modifier [0 = none, 1 = full].
+///  `light_specular_contrib`: Specular lighting modifier [0 = none, 1 = full].
+///  `mat_ambient_color`: Material ambient color.
+///  `mat_diffuse_color`: Material diffuse color.
+///  `mat_specular_color`: Material specular color.
+///  `mat_shininess`: Material shininess amount.
+///  `mat_emissive`: Material emissive color.
+fn point_light(
+        frag_pos: vec3<f32>,
+        frag_normal: vec3<f32>,
+        view_pos: vec3<f32>,
+        light_pos: vec3<f32>,
+        light_color: vec3<f32>,
+        light_ambient_contrib: f32,
+        light_diffuse_contrib: f32,
+        light_specular_contrib: f32,
+        mat_ambient_color: vec3<f32>,
+        mat_diffuse_color: vec3<f32>,
+        mat_specular_color: vec3<f32>,
+        mat_shininess: f32,
+        mat_emissive: vec3<f32>,
+) -> vec3<f32> {
+    // Ambient.
+    let ambient_color = light_color 
+        * light_ambient_contrib
+        * mat_ambient_color;
+
+    // Diffuse.
+    let light_dir = normalize(light_pos - frag_pos);
+    let diffuse_color = light_diffuse(
+        frag_normal,
+        light_dir,
+        light_color,
+        light_diffuse_contrib,
+        mat_diffuse_color
+    );
+
+    // Specular lighting.
+    let view_dir = normalize(view_pos - frag_pos);
+    let specular_color = light_specular(
+        frag_normal,
+        view_dir,
+        light_dir,
+        vec3<f32>(1.0),
+        light_specular_contrib,
+        mat_specular_color,
+        mat_shininess
+    );
+
+    // Final color is an additive combination of ambient, diffuse and specular.
+    return ambient_color
+        + diffuse_color
+        + specular_color
+        + mat_emissive;
+}
+
+/// Calculate the diffuse color contribution from a light for a given material.
+///
+/// `normal`: Normalized perpendicular vector from surface of fragment.
+/// `light_dir`: Normalized vector pointing from fragment to the light.
+/// `light_color`: Color of the light.
+/// `light_contrib`: Light contribution modifier (0 for none, 1 for full).
+/// `mat_color`: Material diffuse color.
+fn light_diffuse(
+        normal: vec3<f32>,
+        light_dir: vec3<f32>,
+        light_color: vec3<f32>,
+        light_contrib: f32,
+        mat_color: vec3<f32>) -> vec3<f32> {
+    let diffuse_amount = max(dot(normal, light_dir), 0.0);
+    return light_color
+        * light_contrib
+        * diffuse_amount
+        * mat_color;
+}
+
+/// Calculate the specular color contribution from a light for a given material.
+///
+/// `normal`: Normalized perpendicular vector from surface of fragment.
+/// `view_dir`:  Normalized vector pointing from fragment to the camera.
+/// `light_dir`: Normalized vector pointing from fragment to the light.
+/// `light_color`: Color of the light.
+/// `light_contrib`: Light contribution modifier (0 for none, 1 for full).
+/// `mat_color`: Material color.
+/// `mat_shininess`: Material specular shininess component.
+fn light_specular(
+        normal: vec3<f32>,
+        view_dir: vec3<f32>,
+        light_dir: vec3<f32>,
+        light_color: vec3<f32>,
+        light_contrib: f32,
+        mat_color: vec3<f32>,
+        mat_shininess: f32) -> vec3<f32> {
+    let reflect_dir = reflect(-light_dir, normal);
+    let specular_amount = pow(max(dot(view_dir, reflect_dir), 0.0), mat_shininess);
+    return light_color
+        * light_contrib
+        * specular_amount
+        * mat_color;
 }
 
 //============================================================================//

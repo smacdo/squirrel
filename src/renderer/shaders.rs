@@ -1,7 +1,7 @@
 use glam::{Mat4, Vec3, Vec4};
 
 use super::{
-    shading::{Light, Material},
+    shading::{DirectionalLight, Material, PointLight},
     textures,
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
@@ -15,6 +15,8 @@ use super::{
 pub struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
     pub view_pos: glam::Vec4,
+    pub light_direction: glam::Vec4, // directional light, .w is ambient amount.
+    pub light_color: glam::Vec4,     // directional light, .w is specular amount.
     pub time_elapsed_seconds: f32,
     pub output_is_srgb: u32,
     pub _padding_2: [f32; 2],
@@ -48,6 +50,18 @@ impl PerFrameUniforms {
     /// Set the world space position of the camera.
     pub fn set_view_pos(&mut self, view_pos: glam::Vec3) {
         self.buffer.values_mut().view_pos = Vec4::new(view_pos.x, view_pos.y, view_pos.z, 1.0);
+    }
+
+    /// Set the directional light for the scene.
+    pub fn set_directional_light(&mut self, light: &DirectionalLight) {
+        self.buffer.values_mut().light_direction = Vec4::new(
+            light.direction.x,
+            light.direction.y,
+            light.direction.z,
+            light.ambient,
+        );
+        self.buffer.values_mut().light_color =
+            Vec4::new(light.color.x, light.color.y, light.color.z, light.specular);
     }
 
     /// Set time elapsed in seconds.
@@ -114,7 +128,7 @@ impl PerModelUniforms {
     }
 
     /// Set light information.
-    pub fn set_light(&mut self, light: &Light) {
+    pub fn set_point_light(&mut self, light: &PointLight) {
         debug_assert!(light.ambient >= 0.0 && light.ambient <= 1.0);
         debug_assert!(light.specular >= 0.0 && light.specular <= 1.0);
 
