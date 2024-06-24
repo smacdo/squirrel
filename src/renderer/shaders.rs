@@ -95,8 +95,9 @@ impl UniformBuffer for PerFrameUniforms {
 pub struct PerModelBufferData {
     pub local_to_world: glam::Mat4,
     pub world_to_local: glam::Mat4,
-    pub light_position: glam::Vec4, // .w is ambient amount.
-    pub light_color: glam::Vec4,    // .w is specular amount.
+    pub light_position: glam::Vec4,    // .w is ambient amount.
+    pub light_color: glam::Vec4,       // .w is specular amount.
+    pub light_attenuation: glam::Vec4, // xyzw: (constant, linear, quadratic, unused).
 }
 
 /// Repsonsible for storing per-model shader uniform values and copying them to
@@ -137,6 +138,12 @@ impl PerModelUniforms {
             light.position.y,
             light.position.z,
             light.ambient,
+        );
+        self.buffer.values_mut().light_attenuation = Vec4::new(
+            light.attenuation.constant,
+            light.attenuation.linear,
+            light.attenuation.quadratic,
+            0.0,
         );
         self.buffer.values_mut().light_color =
             Vec4::new(light.color.x, light.color.y, light.color.z, light.specular);

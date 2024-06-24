@@ -16,7 +16,7 @@ use glam::{Quat, Vec2, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use shaders::{BindGroupLayouts, PerFrameUniforms};
-use shading::{DirectionalLight, Material, PointLight};
+use shading::{DirectionalLight, Material, PointLight, PointLightAttenuation};
 use tracing::{info, warn};
 use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
@@ -74,13 +74,18 @@ impl<'a> Renderer<'a> {
     const CAMERA_LOOK_AT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
     const POINT_LIGHT: PointLight = PointLight {
         position: Vec3::new(1.2, 1.0, 2.0),
-        color: Vec3::new(0.5, 0.5, 0.5),
-        ambient: 0.2,
+        attenuation: PointLightAttenuation {
+            constant: 1.0,
+            linear: 0.09,
+            quadratic: 0.032,
+        },
+        color: Vec3::new(0.8, 0.8, 0.8),
+        ambient: 0.0625,
         specular: 1.0,
     };
     const DIRECTIONAL_LIGHT: DirectionalLight = DirectionalLight {
         direction: Vec3::new(-0.2, -1.0, -0.3),
-        color: Vec3::new(0.5, 0.5, 0.5),
+        color: Vec3::new(0.0, 0.0, 0.0),
         ambient: 0.2,
         specular: 1.0,
     };
@@ -281,15 +286,12 @@ impl<'a> Renderer<'a> {
                         .unwrap(),
                     ),
                     specular_power: 64.0,
-                    emissive_map: Rc::new(
-                        textures::from_image_bytes(
-                            &device,
-                            &queue,
-                            include_bytes!("assets/matrix_emissive.dds"),
-                            Some("crate emmisive texture"),
-                        )
-                        .unwrap(),
-                    ),
+                    emissive_map: Rc::new(textures::new_1x1(
+                        &device,
+                        &queue,
+                        [0, 0, 0],
+                        Some("default emission texture map"),
+                    )),
                 },
             )],
         ));
@@ -433,9 +435,9 @@ impl<'a> Renderer<'a> {
                     ops: wgpu::Operations {
                         // Clear the back buffer when rendering.
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
                             a: 1.0,
                         }),
                         // Write the values from the fragment shader to the back

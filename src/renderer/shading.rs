@@ -20,12 +20,21 @@ pub struct PointLight {
     pub position: Vec3,
     /// The color of the light.
     pub color: Vec3,
+    /// Attenuation terms.
+    pub attenuation: PointLightAttenuation,
     /// Modifies the amount of color that is applied to the ambient term when
     /// shading.
     pub ambient: f32,
     /// Modifies the amount of white color that is applied to the specular term
     /// when shading.
     pub specular: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct PointLightAttenuation {
+    pub constant: f32,
+    pub linear: f32,
+    pub quadratic: f32,
 }
 
 /// Directional light.

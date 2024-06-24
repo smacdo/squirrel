@@ -2,7 +2,9 @@
 // structs to represent unpacked lights/materials. Refactor the functions to
 // take those parameters which should make this all a lot less confusing.
 struct PerFrameUniforms {
+    /// Camera view projection.
     view_projection: mat4x4<f32>,
+    /// Camera world space position.
     view_pos: vec4<f32>,
     light_dir: vec4<f32>, // directional light, .w is ambient amount.
     light_color: vec4<f32>, // directional light, .w is specular amount.
@@ -11,10 +13,20 @@ struct PerFrameUniforms {
 };
 
 struct PerModelUniforms {
+    /// Model -> world transform.
     local_to_world: mat4x4<f32>,
+    /// World -> model transform.
     world_to_local: mat4x4<f32>,
-    light_pos: vec4<f32>,   // .w is ambient amount
-    light_color: vec4<f32>, // .w is specular amount
+    /// Point light world space position. (`w` is the ambient term).
+    light_pos: vec4<f32>, 
+    /// Point light color. (`w` is the specular term).
+    light_color: vec4<f32>,
+    /// Point light attenuation.
+    ///  `x`: constant term.
+    ///  `y`: linear term.
+    ///  `z`: quadratic term.
+    ///  `w`: unused.
+    light_attenuation: vec4<f32>,
 }
 
 struct PerSubmeshUniforms {
@@ -125,9 +137,9 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     ), 1.0);
 
     // Point lighting.
-    // NOTE: this isn't really point lights as they lack falloff parameters.
     let light_pos = per_model.light_pos.xyz;
     let light_color = per_model.light_color.xyz;
+    let light_attenuation = per_model.light_attenuation.xyz;
     let light_ambient_contrib = per_model.light_pos.w;
     let light_specular_contrib = per_model.light_color.w;
 
@@ -137,6 +149,7 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
         per_frame.view_pos.xyz,  // camera world space position
         light_pos,               // point light world space position
         light_color,             // color of point light
+        light_attenuation,       // light attenuation terms.
         light_ambient_contrib,   // amount of ambient contribution
         1.0,                     // amount of diffuse contribution
         light_specular_contrib,  // amount of specular contribution
@@ -227,6 +240,7 @@ fn directional_light(
 ///  `view_pos`: Camera world space position.
 ///  `light_pos`: World space position of the light.
 ///  `light_color`: Color of the light.
+///  `light_attenuation`: Point light attenuation terms (constant, linear, quadratic).
 ///  `light_ambient_contrib`: Ambient lighting modifier [0 = none, 1 = full].
 ///  `light_diffuse_contrib`: Diffuse lighting modifier [0 = none, 1 = full].
 ///  `light_specular_contrib`: Specular lighting modifier [0 = none, 1 = full].
@@ -241,6 +255,7 @@ fn point_light(
         view_pos: vec3<f32>,
         light_pos: vec3<f32>,
         light_color: vec3<f32>,
+        light_attenuation: vec3<f32>,
         light_ambient_contrib: f32,
         light_diffuse_contrib: f32,
         light_specular_contrib: f32,
@@ -277,10 +292,19 @@ fn point_light(
         mat_shininess
     );
 
+    // Attenuation.
+    // TODO: Insert check for when attenuation tries to divide by zero.
+    let distance = length(light_pos - frag_pos);
+    let attenuation = 1.0 / (
+        light_attenuation.x +
+        light_attenuation.y * distance +
+        light_attenuation.z * distance * distance
+    );
+
     // Final color is an additive combination of ambient, diffuse and specular.
-    return ambient_color
-        + diffuse_color
-        + specular_color
+    return ambient_color * attenuation
+        + diffuse_color * attenuation
+        + specular_color * attenuation
         + mat_emissive;
 }
 
