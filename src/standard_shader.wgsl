@@ -307,7 +307,7 @@ fn unpack_point_light(packed_light: PackedPointLight) -> PointLight {
     p.color = packed_light.color.xyz;
     p.ambient_contrib = packed_light.pos.w;
     p.diffuse_contrib = 1.0;
-    p.specular_contrib = packed_light.pos.w;
+    p.specular_contrib = packed_light.color.w;
     p.attenuation = packed_light.attenuation.xyz;
 
     return p;

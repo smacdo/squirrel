@@ -393,7 +393,7 @@ impl<'a> Renderer<'a> {
         self.per_frame_uniforms.update_gpu(&self.queue);
 
         // Make the light orbit around the scene.
-        let sys_time_secs: f32 = 0.0; // self.sys_time_elapsed.as_secs_f32();
+        let sys_time_secs: f32 = self.sys_time_elapsed.as_secs_f32();
 
         let light_xy = rotate_around_pivot(
             Vec2::new(0.0, 0.0),
