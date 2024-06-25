@@ -84,9 +84,9 @@ impl<'a> Renderer<'a> {
         specular: 1.0,
     };
     const DIRECTIONAL_LIGHT: DirectionalLight = DirectionalLight {
-        direction: Vec3::new(-0.2, -1.0, -0.3),
-        color: Vec3::new(0.0, 0.0, 0.0),
-        ambient: 0.2,
+        direction: Vec3::new(0.0, -1.0, 0.0),
+        color: Vec3::new(0.3, 0.3, 0.3),
+        ambient: 0.0300,
         specular: 1.0,
     };
 
@@ -393,7 +393,7 @@ impl<'a> Renderer<'a> {
         self.per_frame_uniforms.update_gpu(&self.queue);
 
         // Make the light orbit around the scene.
-        let sys_time_secs = self.sys_time_elapsed.as_secs_f32();
+        let sys_time_secs: f32 = 0.0; // self.sys_time_elapsed.as_secs_f32();
 
         let light_xy = rotate_around_pivot(
             Vec2::new(0.0, 0.0),

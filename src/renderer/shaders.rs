@@ -15,7 +15,7 @@ use super::{
 pub struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
     pub view_pos: glam::Vec4,
-    pub light_direction: glam::Vec4, // directional light, .w is ambient amount.
+    pub light_direction: glam::Vec4, // directional light, .xyz is normalized, .w is ambient amount.
     pub light_color: glam::Vec4,     // directional light, .w is specular amount.
     pub time_elapsed_seconds: f32,
     pub output_is_srgb: u32,
@@ -54,12 +54,9 @@ impl PerFrameUniforms {
 
     /// Set the directional light for the scene.
     pub fn set_directional_light(&mut self, light: &DirectionalLight) {
-        self.buffer.values_mut().light_direction = Vec4::new(
-            light.direction.x,
-            light.direction.y,
-            light.direction.z,
-            light.ambient,
-        );
+        let dir = light.direction.normalize();
+
+        self.buffer.values_mut().light_direction = Vec4::new(dir.x, dir.y, dir.z, light.ambient);
         self.buffer.values_mut().light_color =
             Vec4::new(light.color.x, light.color.y, light.color.z, light.specular);
     }

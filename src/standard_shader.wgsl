@@ -1,3 +1,6 @@
+//============================================================================//
+// Uniform Buffers                                                            //
+//============================================================================//
 // TODO: Consider using structs to represent the packed lighting data, and 
 // structs to represent unpacked lights/materials. Refactor the functions to
 // take those parameters which should make this all a lot less confusing.
@@ -6,8 +9,7 @@ struct PerFrameUniforms {
     view_projection: mat4x4<f32>,
     /// Camera world space position.
     view_pos: vec4<f32>,
-    light_dir: vec4<f32>, // directional light, .w is ambient amount.
-    light_color: vec4<f32>, // directional light, .w is specular amount.
+    directional_light: PackedDirectionalLight,
     time_elapsed_seconds: f32,
     output_is_srgb: u32, // TODO(scott): Pack bit flags in here.
 };
@@ -17,24 +19,17 @@ struct PerModelUniforms {
     local_to_world: mat4x4<f32>,
     /// World -> model transform.
     world_to_local: mat4x4<f32>,
-    /// Point light world space position. (`w` is the ambient term).
-    light_pos: vec4<f32>, 
-    /// Point light color. (`w` is the specular term).
-    light_color: vec4<f32>,
-    /// Point light attenuation.
-    ///  `x`: constant term.
-    ///  `y`: linear term.
-    ///  `z`: quadratic term.
-    ///  `w`: unused.
-    light_attenuation: vec4<f32>,
+    /// Point light.
+    point_light: PackedPointLight,
 }
 
 struct PerSubmeshUniforms {
-    ambient_color: vec3<f32>,
-    diffuse_color: vec3<f32>,
-    specular_color: vec4<f32>, // .w is power.
+    material: PerSubmeshMaterial
 }
 
+//============================================================================//
+// Shader inputs                                                              //
+//============================================================================//
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -86,6 +81,9 @@ var specular_texture: texture_2d<f32>;
 @group(2) @binding(4)
 var emissive_texture: texture_2d<f32>;
 
+//============================================================================//
+// Vertex shader                                                              //
+//============================================================================//
 @vertex
 fn vs_main(v_in: VertexInput) -> VertexOutput {
     var v_out: VertexOutput;
@@ -100,64 +98,36 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
     return v_out;
 }
 
+//============================================================================//
+// Pixel shader                                                               //
+//============================================================================//
 @fragment
 fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     let frag_normal = normalize(v_in.normal);
-
-    // Sample the diffuse and specular texture maps. For materials that do not
-    // have an associated texture map use a default 1x1 white pixel. Use a 1x1
-    // black pixel to default the emissive map.
-    let diffuse_tex_color = textureSample(diffuse_texture, tex_sampler, v_in.tex_coords).xyz;
-    let specular_tex_color = textureSample(specular_texture, tex_sampler, v_in.tex_coords).xyz;
-    let emissive_tex_color = textureSample(emissive_texture, tex_sampler, v_in.tex_coords).xyz;
+    let material = unpack_per_submesh_material(
+            per_submesh.material,
+            v_in.tex_coords,
+            tex_sampler,
+            diffuse_texture,
+            specular_texture,
+            emissive_texture);
 
     // Directional lighting.
-    //  Need to invert direction beecause directional light is specified as dir
-    //  from light source towards fragment but lighting function expects it to
-    //  be fragment to light.
-    let dir_light_dir = normalize(-per_frame.light_dir.xyz);
-    let dir_light_color = per_frame.light_color.xyz;
-    let dir_ambient_contrib = per_frame.light_dir.w;
-    let dir_specular_contrib = per_frame.light_color.w;
-
     var frag_color = vec4<f32>(directional_light(
         v_in.position_ws,        // fragment world space position
         frag_normal,             // fragment normal direction (normalized)
         per_frame.view_pos.xyz,  // camera world space position
-        dir_light_dir,           // fragment to directional light direction (normalized)
-        dir_light_color,         // color of directional light
-        dir_ambient_contrib,     // amount of ambient contribution
-        1.0,                     // amount of diffuse contribution
-        dir_specular_contrib,    // amount of specular contribution
-        diffuse_tex_color * per_submesh.ambient_color,       // material ambient color
-        diffuse_tex_color * per_submesh.diffuse_color,       // material diffuse color
-        specular_tex_color * per_submesh.specular_color.xyz, // material specular color
-        per_submesh.specular_color.w, // material specular shininess
-        emissive_tex_color            // material emissive color
+        unpack_directional_light(per_frame.directional_light),
+        material,
     ), 1.0);
 
     // Point lighting.
-    let light_pos = per_model.light_pos.xyz;
-    let light_color = per_model.light_color.xyz;
-    let light_attenuation = per_model.light_attenuation.xyz;
-    let light_ambient_contrib = per_model.light_pos.w;
-    let light_specular_contrib = per_model.light_color.w;
-
     frag_color += vec4<f32>(point_light(
         v_in.position_ws,        // fragment world space position
         frag_normal,             // fragment normal direction (normalized)
         per_frame.view_pos.xyz,  // camera world space position
-        light_pos,               // point light world space position
-        light_color,             // color of point light
-        light_attenuation,       // light attenuation terms.
-        light_ambient_contrib,   // amount of ambient contribution
-        1.0,                     // amount of diffuse contribution
-        light_specular_contrib,  // amount of specular contribution
-        diffuse_tex_color * per_submesh.ambient_color,       // material ambient color
-        diffuse_tex_color * per_submesh.diffuse_color,       // material diffuse color
-        specular_tex_color * per_submesh.specular_color.xyz, // material specular color
-        per_submesh.specular_color.w, // material specular shininess
-        emissive_tex_color            // material emissive color
+        unpack_point_light(per_model.point_light),
+        material,
     ), 1.0);
 
     // Should the color be converted from linear to sRGB in the pixel shader?
@@ -169,8 +139,90 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     }
 }
 
+//============================================================================//
+// Shared types and functions                                                 //
+//============================================================================//
+struct PerSubmeshMaterial {
+    ambient_color: vec3<f32>,  // .w is unused.
+    diffuse_color: vec3<f32>,  // .w is unused.
+    specular_color: vec4<f32>, // .w is power.
+};
+
+struct Material {
+    ambient_color: vec3<f32>,
+    diffuse_color: vec3<f32>,
+    specular_color: vec3<f32>,
+    specular_shininess: f32,
+    emissive_color: vec3<f32>,
+};
+
+fn unpack_per_submesh_material(
+        material_constants: PerSubmeshMaterial,
+        tex_uv: vec2<f32>,
+        tex_sampler: sampler,
+        diffuse_map: texture_2d<f32>,
+        specular_map: texture_2d<f32>,
+        emissive_map: texture_2d<f32>,
+) -> Material {
+    // Sample the material's texture maps. If a texture map is not specified
+    // then either use a 1x1 white pixel to let the constant color through or
+    // use a 1x1 black pixel to disable that contribution.
+    //
+    // A sane default is probably white = 1 for the diffuse texture map, and a
+    // black = 0 for the specular and emissive texture map.
+    let diffuse_tex_color = textureSample(diffuse_map, tex_sampler, tex_uv).xyz;
+    let specular_tex_color = textureSample(specular_map, tex_sampler, tex_uv).xyz;
+    let emissive_tex_color = textureSample(emissive_map, tex_sampler, tex_uv).xyz;
+
+    // Combine the texture maps with the material's constant color values before
+    // returning the material.
+    var m: Material;
+
+    m.ambient_color = material_constants.ambient_color.xyz * diffuse_tex_color;
+    m.diffuse_color = material_constants.diffuse_color.xyz * diffuse_tex_color;
+    m.specular_color = material_constants.specular_color.xyz * specular_tex_color;
+    m.emissive_color = emissive_tex_color.xyz;
+
+    m.specular_shininess = material_constants.specular_color.w;
+
+    return m;
+}
+
+struct PackedDirectionalLight {
+    /// Direction from light to source.
+    ///   .xyz is normalized
+    ///   .w is ambient contribution.
+    direction: vec4<f32>,
+    /// Color
+    ///   .w is specular contribution.
+    color: vec4<f32>,
+}
+
+struct DirectionalLight {
+    reverse_direction_n: vec3<f32>,
+    color: vec3<f32>,
+    ambient_contrib: f32,
+    diffuse_contrib: f32,
+    specular_contrib: f32,
+}
+
+fn unpack_directional_light(directional_light: PackedDirectionalLight) -> DirectionalLight {    
+    //  Need to invert direction beecause directional light is specified as dir
+    //  from light source towards fragment but lighting function expects it to
+    //  be fragment to light.
+    var d: DirectionalLight;
+    
+    d.reverse_direction_n = normalize(-directional_light.direction.xyz);
+    d.color = directional_light.color.xyz;
+    d.ambient_contrib = directional_light.direction.w;
+    d.diffuse_contrib = 1.0;
+    d.specular_contrib = directional_light.color.w;
+
+    return d;
+}
+
 /// Calculate the color contribution from a directional light for a given 
-//// material.
+/// material.
 ///
 ///  `frag_pos`:  Fragment world space position.
 ///  `frag_normal`: Fragment normal vector direction (normalized).
@@ -189,29 +241,21 @@ fn directional_light(
         frag_pos: vec3<f32>,
         frag_normal: vec3<f32>,
         view_pos: vec3<f32>,
-        light_dir: vec3<f32>,
-        light_color: vec3<f32>,
-        light_ambient_contrib: f32,
-        light_diffuse_contrib: f32,
-        light_specular_contrib: f32,
-        mat_ambient_color: vec3<f32>,
-        mat_diffuse_color: vec3<f32>,
-        mat_specular_color: vec3<f32>,
-        mat_shininess: f32,
-        mat_emissive: vec3<f32>,
+        light: DirectionalLight,
+        material: Material,
 ) -> vec3<f32> {
     // Ambient.
-    let ambient_color = light_color 
-        * light_ambient_contrib
-        * mat_ambient_color;
+    let ambient_color = light.color 
+        * light.ambient_contrib
+        * material.ambient_color;
 
     // Diffuse.
     let diffuse_color = light_diffuse(
         frag_normal,
-        light_dir,
-        light_color,
-        light_diffuse_contrib,
-        mat_diffuse_color
+        light.reverse_direction_n,
+        light.color,
+        light.diffuse_contrib,
+        material.diffuse_color
     );
 
     // Specular lighting.
@@ -219,18 +263,54 @@ fn directional_light(
     let specular_color = light_specular(
         frag_normal,
         view_dir,
-        light_dir,
+        light.reverse_direction_n,
         vec3<f32>(1.0),
-        light_specular_contrib,
-        mat_specular_color,
-        mat_shininess
+        light.specular_contrib,
+        material.specular_color,
+        material.specular_shininess
     );
 
     // Final color is an additive combination of ambient, diffuse and specular.
+    // TODO: Bug! Emissive color should only be added once after summing all lights!
     return ambient_color
         + diffuse_color
         + specular_color
-        + mat_emissive;
+        + material.emissive_color;
+}
+
+struct PackedPointLight {
+    /// Point light world space position. (`w` is the ambient term).
+    pos: vec4<f32>, 
+    /// Point light color. (`w` is the specular term).
+    color: vec4<f32>,
+    /// Point light attenuation.
+    ///  `x`: constant term.
+    ///  `y`: linear term.
+    ///  `z`: quadratic term.
+    ///  `w`: unused.
+    attenuation: vec4<f32>,
+}
+
+struct PointLight {
+    pos: vec3<f32>,
+    color: vec3<f32>,
+    ambient_contrib: f32,
+    diffuse_contrib: f32,
+    specular_contrib: f32,
+    attenuation: vec3<f32>,
+}
+
+fn unpack_point_light(packed_light: PackedPointLight) -> PointLight {
+    var p: PointLight;
+
+    p.pos = packed_light.pos.xyz;
+    p.color = packed_light.color.xyz;
+    p.ambient_contrib = packed_light.pos.w;
+    p.diffuse_contrib = 1.0;
+    p.specular_contrib = packed_light.pos.w;
+    p.attenuation = packed_light.attenuation.xyz;
+
+    return p;
 }
 
 /// Calculate the color contribution from a point light for a given material.
@@ -253,31 +333,20 @@ fn point_light(
         frag_pos: vec3<f32>,
         frag_normal: vec3<f32>,
         view_pos: vec3<f32>,
-        light_pos: vec3<f32>,
-        light_color: vec3<f32>,
-        light_attenuation: vec3<f32>,
-        light_ambient_contrib: f32,
-        light_diffuse_contrib: f32,
-        light_specular_contrib: f32,
-        mat_ambient_color: vec3<f32>,
-        mat_diffuse_color: vec3<f32>,
-        mat_specular_color: vec3<f32>,
-        mat_shininess: f32,
-        mat_emissive: vec3<f32>,
+        light: PointLight,
+        material: Material,
 ) -> vec3<f32> {
     // Ambient.
-    let ambient_color = light_color 
-        * light_ambient_contrib
-        * mat_ambient_color;
+    let ambient_color = light.color * light.ambient_contrib * material.ambient_color;
 
     // Diffuse.
-    let light_dir = normalize(light_pos - frag_pos);
+    let light_dir = normalize(light.pos - frag_pos);
     let diffuse_color = light_diffuse(
         frag_normal,
         light_dir,
-        light_color,
-        light_diffuse_contrib,
-        mat_diffuse_color
+        light.color,
+        light.diffuse_contrib,
+        material.diffuse_color
     );
 
     // Specular lighting.
@@ -287,25 +356,26 @@ fn point_light(
         view_dir,
         light_dir,
         vec3<f32>(1.0),
-        light_specular_contrib,
-        mat_specular_color,
-        mat_shininess
+        light.specular_contrib,
+        material.specular_color,
+        material.specular_shininess
     );
 
     // Attenuation.
     // TODO: Insert check for when attenuation tries to divide by zero.
-    let distance = length(light_pos - frag_pos);
+    let distance = length(light.pos - frag_pos);
     let attenuation = 1.0 / (
-        light_attenuation.x +
-        light_attenuation.y * distance +
-        light_attenuation.z * distance * distance
+        light.attenuation.x +
+        light.attenuation.y * distance +
+        light.attenuation.z * distance * distance
     );
 
     // Final color is an additive combination of ambient, diffuse and specular.
+    // TODO: Bug! Emissive color should only be added once after summing all lights!
     return ambient_color * attenuation
         + diffuse_color * attenuation
         + specular_color * attenuation
-        + mat_emissive;
+        + material.emissive_color;
 }
 
 /// Calculate the diffuse color contribution from a light for a given material.
