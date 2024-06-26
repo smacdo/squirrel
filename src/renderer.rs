@@ -16,7 +16,7 @@ use glam::{Quat, Vec2, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use shaders::{BindGroupLayouts, PerFrameUniforms};
-use shading::{DirectionalLight, Material, PointLight, PointLightAttenuation};
+use shading::{DirectionalLight, LightAttenuation, Material, PointLight, SpotLight};
 use tracing::{info, warn};
 use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
@@ -58,6 +58,7 @@ pub struct Renderer<'a> {
     pub camera_controller: ArcballCameraController,
     point_light: PointLight,
     directional_light: DirectionalLight,
+    spot_light: SpotLight,
     models: Vec<Model>,
     pub time_to_update: f32,
     // XXX(scott): `window` must be the last field in the struct because it needs
@@ -74,19 +75,33 @@ impl<'a> Renderer<'a> {
     const CAMERA_LOOK_AT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
     const POINT_LIGHT: PointLight = PointLight {
         position: Vec3::new(1.2, 1.0, 2.0),
-        attenuation: PointLightAttenuation {
+        attenuation: LightAttenuation {
             constant: 1.0,
             linear: 0.09,
             quadratic: 0.032,
         },
         color: Vec3::new(0.8, 0.8, 0.8),
-        ambient: 0.0625,
+        ambient: 0.0425,
         specular: 1.0,
     };
     const DIRECTIONAL_LIGHT: DirectionalLight = DirectionalLight {
         direction: Vec3::new(0.0, -1.0, 0.0),
         color: Vec3::new(0.3, 0.3, 0.3),
-        ambient: 0.0300,
+        ambient: 0.01,
+        specular: 1.0,
+    };
+    const SPOT_LIGHT: SpotLight = SpotLight {
+        position: Vec3::ZERO,
+        direction: Vec3::ZERO,
+        cutoff_radians: 0.2181662,       // 12.5 degree.
+        outer_cutoff_radians: 0.3054326, // 17.5 degree.
+        color: Vec3::new(0.8, 0.8, 0.8),
+        attenuation: LightAttenuation {
+            constant: 1.0,
+            linear: 0.09,
+            quadratic: 0.032,
+        },
+        ambient: 0.01,
         specular: 1.0,
     };
 
@@ -297,8 +312,6 @@ impl<'a> Renderer<'a> {
         ));
 
         // Set up scene.
-        let point_light = Self::POINT_LIGHT.clone();
-        let directional_light = Self::DIRECTIONAL_LIGHT.clone();
         let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
 
         for initial_pos in INITIAL_CUBE_POS {
@@ -314,10 +327,8 @@ impl<'a> Renderer<'a> {
 
         // Set up additional render passes.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);
-        let mut light_debug_pass =
+        let light_debug_pass =
             passes::LightDebugPass::new(&device, &surface_config, &bind_group_layouts);
-
-        light_debug_pass.set_point_light(&point_light);
 
         // Initialization (hopefully) complete!
         Self {
@@ -327,8 +338,9 @@ impl<'a> Renderer<'a> {
             surface_config,
             window_size,
             render_pipeline,
-            point_light,
-            directional_light,
+            point_light: Self::POINT_LIGHT,
+            directional_light: Self::DIRECTIONAL_LIGHT,
+            spot_light: Self::SPOT_LIGHT,
             models,
             camera,
             sys_time_elapsed: Default::default(),
@@ -379,6 +391,10 @@ impl<'a> Renderer<'a> {
         self.camera_controller
             .update_camera(&mut self.camera, delta);
 
+        // Spot light follows the camera.
+        self.spot_light.position = self.camera.eye();
+        self.spot_light.direction = self.camera.forward();
+
         // Update per-frame shader uniforms.
         self.sys_time_elapsed += delta;
 
@@ -387,6 +403,7 @@ impl<'a> Renderer<'a> {
         self.per_frame_uniforms.set_view_pos(self.camera.eye());
         self.per_frame_uniforms
             .set_directional_light(&self.directional_light);
+        self.per_frame_uniforms.set_spot_light(&self.spot_light);
         self.per_frame_uniforms
             .set_time_elapsed_seconds(self.sys_time_elapsed);
 

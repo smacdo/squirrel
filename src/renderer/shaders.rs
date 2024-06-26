@@ -1,7 +1,20 @@
+//! Rust representations of shader uniform buffers and other expected input
+//! values. Each struct defined in this module has a matching struct of the same
+//! name in shader code.
+//!
+//! Any struct representing a uniform buffer (eg `PerFrameBufferData`) must have
+//! a memory layout that exactly matches the shader uniform buffer. In particular
+//! all fields must be aligned to a 16 byte (eg `Vec4`) padding as this is a
+//! WebGPU requirement.
+mod packed_structs;
+
 use glam::{Mat4, Vec3, Vec4};
+use packed_structs::{
+    PackedDirectionalLight, PackedMaterialConstants, PackedPointLight, PackedSpotLight,
+};
 
 use super::{
-    shading::{DirectionalLight, Material, PointLight},
+    shading::{DirectionalLight, Material, PointLight, SpotLight},
     textures,
     uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
@@ -9,14 +22,18 @@ use super::{
 // TODO(scott): Use a derive! macro to eliminate the copy-paste in these
 //              `per-frame-*` structs.
 
+// TODO(scott): Consider renaming `Per*Uniforms`` structs to `Per*ShaderInputs`
+//              to reflect that they can represent more than just the uniform
+//              values.
+
 /// Per-frame uniform values used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PerFrameBufferData {
+struct PerFrameBufferData {
     pub view_projection: glam::Mat4,
     pub view_pos: glam::Vec4,
-    pub light_direction: glam::Vec4, // directional light, .xyz is normalized, .w is ambient amount.
-    pub light_color: glam::Vec4,     // directional light, .w is specular amount.
+    pub directional_light: PackedDirectionalLight,
+    pub spot_light: PackedSpotLight,
     pub time_elapsed_seconds: f32,
     pub output_is_srgb: u32,
     pub _padding_2: [f32; 2],
@@ -25,7 +42,7 @@ pub struct PerFrameBufferData {
 /// Repsonsible for storing per-frame shader uniform values and copying them to
 /// a GPU backed buffer accessible to shaders.
 pub struct PerFrameUniforms {
-    pub buffer: GenericUniformBuffer<PerFrameBufferData>,
+    buffer: GenericUniformBuffer<PerFrameBufferData>,
 }
 
 impl PerFrameUniforms {
@@ -54,11 +71,12 @@ impl PerFrameUniforms {
 
     /// Set the directional light for the scene.
     pub fn set_directional_light(&mut self, light: &DirectionalLight) {
-        let dir = light.direction.normalize();
+        self.buffer.values_mut().directional_light = light.clone().into();
+    }
 
-        self.buffer.values_mut().light_direction = Vec4::new(dir.x, dir.y, dir.z, light.ambient);
-        self.buffer.values_mut().light_color =
-            Vec4::new(light.color.x, light.color.y, light.color.z, light.specular);
+    /// Set the spot light for the scene.
+    pub fn set_spot_light(&mut self, light: &SpotLight) {
+        self.buffer.values_mut().spot_light = light.clone().into();
     }
 
     /// Set time elapsed in seconds.
@@ -69,6 +87,23 @@ impl PerFrameUniforms {
     /// Set if the output backbuffer format is SRGB or not.
     pub fn set_output_is_srgb(&mut self, is_srgb: bool) {
         self.buffer.values_mut().output_is_srgb = if is_srgb { 1 } else { 0 };
+    }
+
+    /// Gets the bind group layout describing any instance of `PerFrameUniforms`.
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-frame bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        }
     }
 }
 
@@ -89,19 +124,17 @@ impl UniformBuffer for PerFrameUniforms {
 /// Per-model uniform values that are used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PerModelBufferData {
+struct PerModelBufferData {
     pub local_to_world: glam::Mat4,
     pub world_to_local: glam::Mat4,
-    pub light_position: glam::Vec4,    // .w is ambient amount.
-    pub light_color: glam::Vec4,       // .w is specular amount.
-    pub light_attenuation: glam::Vec4, // xyzw: (constant, linear, quadratic, unused).
+    pub point_light: PackedPointLight,
 }
 
 /// Repsonsible for storing per-model shader uniform values and copying them to
 /// a GPU backed buffer accessible to shaders.
 #[derive(Debug)]
 pub struct PerModelUniforms {
-    pub buffer: GenericUniformBuffer<PerModelBufferData>,
+    buffer: GenericUniformBuffer<PerModelBufferData>,
 }
 
 impl PerModelUniforms {
@@ -130,20 +163,24 @@ impl PerModelUniforms {
         debug_assert!(light.ambient >= 0.0 && light.ambient <= 1.0);
         debug_assert!(light.specular >= 0.0 && light.specular <= 1.0);
 
-        self.buffer.values_mut().light_position = Vec4::new(
-            light.position.x,
-            light.position.y,
-            light.position.z,
-            light.ambient,
-        );
-        self.buffer.values_mut().light_attenuation = Vec4::new(
-            light.attenuation.constant,
-            light.attenuation.linear,
-            light.attenuation.quadratic,
-            0.0,
-        );
-        self.buffer.values_mut().light_color =
-            Vec4::new(light.color.x, light.color.y, light.color.z, light.specular);
+        self.buffer.values_mut().point_light = light.clone().into();
+    }
+
+    /// Gets the bind group layout describing any instance of `PerModelUniforms`.
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-model bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        }
     }
 }
 
@@ -164,12 +201,8 @@ impl UniformBuffer for PerModelUniforms {
 /// Per-submesh uniform values that are used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PerSubmeshBufferData {
-    pub ambient_color: Vec3,
-    pub _padding_2: f32,
-    pub diffuse_color: Vec3,
-    pub _padding_3: f32,
-    pub specular_color: Vec4,
+struct PerSubmeshBufferData {
+    pub material: PackedMaterialConstants,
 }
 
 /// Responsible for storing per-submesh shader values used during a submesh
@@ -187,6 +220,12 @@ pub struct PerSubmeshUniforms {
 }
 
 impl PerSubmeshUniforms {
+    pub const UNIFORMS_BINDING_SLOT: u32 = 0;
+    pub const SAMPLER_BINDING_SLOT: u32 = 1;
+    pub const DIFFUSE_VIEW_BINDING_SLOT: u32 = 2;
+    pub const SPECULAR_VIEW_BINDING_SLOT: u32 = 3;
+    pub const EMISSIVE_VIEW_BINDING_SLOT: u32 = 4;
+
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts, material: &Material) -> Self {
         // TODO: How to move this into the GenericUniformBuffer type when we have
         // additional bind group entries for the textures?
@@ -202,15 +241,7 @@ impl PerSubmeshUniforms {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let values = PerSubmeshBufferData {
-            ambient_color: material.ambient_color,
-            diffuse_color: material.diffuse_color,
-            specular_color: Vec4::new(
-                material.specular_color.x,
-                material.specular_color.y,
-                material.specular_color.z,
-                material.specular_power,
-            ),
-            ..Default::default()
+            material: material.clone().into(),
         };
 
         let gpu_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -227,23 +258,23 @@ impl PerSubmeshUniforms {
             layout: &layouts.per_submesh_layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_UNIFORMS_BINDING_SLOT,
+                    binding: Self::UNIFORMS_BINDING_SLOT,
                     resource: gpu_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_SAMPLER_BINDING_SLOT,
+                    binding: Self::SAMPLER_BINDING_SLOT,
                     resource: wgpu::BindingResource::Sampler(&tex_sampler),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT,
+                    binding: Self::DIFFUSE_VIEW_BINDING_SLOT,
                     resource: wgpu::BindingResource::TextureView(&diffuse_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT,
+                    binding: Self::SPECULAR_VIEW_BINDING_SLOT,
                     resource: wgpu::BindingResource::TextureView(&specular_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BindGroupLayouts::PER_SUBMESH_EMISSIVE_VIEW_BINDING_SLOT,
+                    binding: Self::EMISSIVE_VIEW_BINDING_SLOT,
                     resource: wgpu::BindingResource::TextureView(&emissive_view),
                 },
             ],
@@ -258,6 +289,68 @@ impl PerSubmeshUniforms {
             gpu_buffer,
             bind_group,
             is_dirty: std::cell::Cell::new(false),
+        }
+    }
+
+    /// Gets the bind group layout describing any instance of `PerMeshUniforms`.
+    ///
+    /// Expected bind group inputs:
+    ///  0 - uniforms
+    ///  1 - texture map sampler
+    ///  2 - diffuse texture
+    ///  3 - specular texture
+    ///  4 - emissive texture
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-mesh bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::UNIFORMS_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::SAMPLER_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::DIFFUSE_VIEW_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::SPECULAR_VIEW_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: Self::EMISSIVE_VIEW_BINDING_SLOT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
         }
     }
 }
@@ -280,7 +373,7 @@ impl UniformBuffer for PerSubmeshUniforms {
 /// Per-model uniform values that are used by the debug shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PerDebugMeshBufferData {
+struct PerDebugMeshBufferData {
     pub local_to_world: Mat4,
     pub color_tint: Vec3,
     pub _padding_1: f32,
@@ -290,7 +383,7 @@ pub struct PerDebugMeshBufferData {
 /// them to a GPU backed buffer accessible to shaders.
 #[derive(Debug)]
 pub struct PerDebugMeshUniforms {
-    pub buffer: GenericUniformBuffer<PerDebugMeshBufferData>,
+    buffer: GenericUniformBuffer<PerDebugMeshBufferData>,
 }
 
 impl PerDebugMeshUniforms {
@@ -320,6 +413,23 @@ impl PerDebugMeshUniforms {
     pub fn set_color_tint(&mut self, color: glam::Vec3) {
         self.buffer.values_mut().color_tint = color;
     }
+
+    /// Gets the bind group layout describing any instance of `PerDebugMeshUniforms`.
+    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("per-debug-mesh bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        }
+    }
 }
 
 impl UniformBuffer for PerDebugMeshUniforms {
@@ -345,132 +455,17 @@ pub struct BindGroupLayouts {
 }
 
 impl BindGroupLayouts {
-    pub const PER_SUBMESH_UNIFORMS_BINDING_SLOT: u32 = 0;
-    pub const PER_SUBMESH_SAMPLER_BINDING_SLOT: u32 = 1;
-    pub const PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT: u32 = 2;
-    pub const PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT: u32 = 3;
-    pub const PER_SUBMESH_EMISSIVE_VIEW_BINDING_SLOT: u32 = 4;
-
     /// Create a new bind group layout registry.
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
-            per_frame_layout: device.create_bind_group_layout(&Self::per_frame_desc()),
-            per_model_layout: device.create_bind_group_layout(&Self::per_model_desc()),
-            per_submesh_layout: device.create_bind_group_layout(&Self::per_submesh_desc()),
-            per_debug_mesh_layout: device.create_bind_group_layout(&Self::per_debug_mesh_desc()),
-        }
-    }
-
-    /// Gets the bind group layout describing any instance of `PerFrameUniforms`.
-    pub fn per_frame_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-frame bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        }
-    }
-
-    /// Gets the bind group layout describing any instance of `PerModelUniforms`.
-    pub fn per_model_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-model bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        }
-    }
-
-    /// Gets the bind group layout describing any instance of `PerMeshUniforms`.
-    ///
-    /// Expected bind group inputs:
-    ///  0 - uniforms
-    ///  1 - texture map sampler
-    ///  2 - diffuse texture
-    ///  3 - specular texture
-    ///  4 - emissive texture
-    pub fn per_submesh_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-mesh bind group layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_UNIFORMS_BINDING_SLOT,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_SAMPLER_BINDING_SLOT,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_DIFFUSE_VIEW_BINDING_SLOT,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_SPECULAR_VIEW_BINDING_SLOT,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: Self::PER_SUBMESH_EMISSIVE_VIEW_BINDING_SLOT,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        }
-    }
-
-    /// Gets the bind group layout describing any instance of `PerDebugMeshUniforms`.
-    pub fn per_debug_mesh_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-debug-mesh bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
+            per_frame_layout: device
+                .create_bind_group_layout(&PerFrameUniforms::bind_group_layout_desc()),
+            per_model_layout: device
+                .create_bind_group_layout(&PerModelUniforms::bind_group_layout_desc()),
+            per_submesh_layout: device
+                .create_bind_group_layout(&PerSubmeshUniforms::bind_group_layout_desc()),
+            per_debug_mesh_layout: device
+                .create_bind_group_layout(&PerDebugMeshUniforms::bind_group_layout_desc()),
         }
     }
 }

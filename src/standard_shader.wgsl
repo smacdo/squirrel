@@ -10,6 +10,7 @@ struct PerFrameUniforms {
     /// Camera world space position.
     view_pos: vec4<f32>,
     directional_light: PackedDirectionalLight,
+    spot_light: PackedSpotLight,
     time_elapsed_seconds: f32,
     output_is_srgb: u32, // TODO(scott): Pack bit flags in here.
 };
@@ -24,7 +25,7 @@ struct PerModelUniforms {
 }
 
 struct PerSubmeshUniforms {
-    material: PerSubmeshMaterial
+    material: PackedMaterialConstants
 }
 
 //============================================================================//
@@ -104,7 +105,7 @@ fn vs_main(v_in: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
     let frag_normal = normalize(v_in.normal);
-    let material = unpack_per_submesh_material(
+    let material = unpack_material(
             per_submesh.material,
             v_in.tex_coords,
             tex_sampler,
@@ -113,40 +114,49 @@ fn fs_main(v_in: VertexOutput) -> @location(0) vec4<f32> {
             emissive_texture);
 
     // Directional lighting.
-    var frag_color = vec4<f32>(directional_light(
+    var frag_color = directional_light(
         v_in.position_ws,        // fragment world space position
         frag_normal,             // fragment normal direction (normalized)
         per_frame.view_pos.xyz,  // camera world space position
         unpack_directional_light(per_frame.directional_light),
-        material,
-    ), 1.0);
+        material
+    );
 
     // Point lighting.
-    frag_color += vec4<f32>(point_light(
+    frag_color += point_light(
         v_in.position_ws,        // fragment world space position
         frag_normal,             // fragment normal direction (normalized)
         per_frame.view_pos.xyz,  // camera world space position
         unpack_point_light(per_model.point_light),
         material,
-    ), 1.0);
+    );
+
+    // Spot light.
+    frag_color += spot_light(
+        v_in.position_ws,        // fragment world space position
+        frag_normal,             // fragment normal direction (normalized)
+        per_frame.view_pos.xyz,  // camera world space position
+        unpack_spot_light(per_frame.spot_light),
+        material,
+    );
 
     // Should the color be converted from linear to sRGB in the pixel shader?
     // Otherwise simply return it in lienar space.
     if (per_frame.output_is_srgb == 0) {
-        return from_linear_rgb(frag_color);
+        return from_linear_rgb(vec4(frag_color, 1.0));
     } else {
-        return frag_color;
+        return vec4(frag_color, 1.0);
     }
 }
 
 //============================================================================//
 // Shared types and functions                                                 //
 //============================================================================//
-struct PerSubmeshMaterial {
-    ambient_color: vec3<f32>,  // .w is unused.
-    diffuse_color: vec3<f32>,  // .w is unused.
+struct PackedMaterialConstants {
+    ambient_color: vec4<f32>,  // .w is unused.
+    diffuse_color: vec4<f32>,  // .w is unused.
     specular_color: vec4<f32>, // .w is power.
-};
+}
 
 struct Material {
     ambient_color: vec3<f32>,
@@ -156,8 +166,8 @@ struct Material {
     emissive_color: vec3<f32>,
 };
 
-fn unpack_per_submesh_material(
-        material_constants: PerSubmeshMaterial,
+fn unpack_material(
+        material_constants: PackedMaterialConstants,
         tex_uv: vec2<f32>,
         tex_sampler: sampler,
         diffuse_map: texture_2d<f32>,
@@ -376,6 +386,88 @@ fn point_light(
         + diffuse_color * attenuation
         + specular_color * attenuation
         + material.emissive_color;
+}
+
+struct PackedSpotLight {
+    /// Point light world space position. (`w` is the precomputed cutoff angle).
+    pos: vec4<f32>, 
+    /// Normalized direction pointing away from the light.
+    ///   .xyz is normalized
+    ///   .w is ambient contribution.
+    direction: vec4<f32>,
+    /// Color
+    ///   .w is specular contribution.
+    color: vec4<f32>,
+    /// Attenuation
+    ///   .x is constant term, .y is linear term and .z is quadratic term.
+    ///   .w is the precomputed outer cutoff angle.
+    attenuation: vec4<f32>,
+
+}
+
+struct SpotLight {
+    pos: vec3<f32>,
+    /// Normalized direction pointing away from the light.
+    direction: vec3<f32>,
+    /// Precomputed cutoff angle, eg `cos(cutoff_angle)`.
+    cutoff: f32,
+    /// Precomputed outer cutoff angle, eg `cos(outer_cutoff_angle)`.
+    outer_cutoff: f32,
+    color: vec3<f32>,
+    attenuation: vec3<f32>,
+    ambient_contrib: f32,
+    diffuse_contrib: f32,
+    specular_contrib: f32,
+}
+
+fn unpack_spot_light(packed_light: PackedSpotLight) -> SpotLight {
+    var s: SpotLight;
+
+    s.pos = packed_light.pos.xyz;
+    s.direction = packed_light.direction.xyz;
+    s.cutoff = packed_light.pos.w;
+    s.outer_cutoff = packed_light.attenuation.w;
+    s.color = packed_light.color.xyz;
+    s.attenuation = packed_light.attenuation.xyz;
+    s.ambient_contrib = packed_light.direction.w;
+    s.diffuse_contrib = 1.0;
+    s.specular_contrib = packed_light.color.w;
+
+    return s;
+}
+
+fn spot_light_as_point_light(s: SpotLight, intensity: f32) -> PointLight {
+    var p: PointLight;
+
+    p.pos = s.pos;
+    p.color = s.color;
+    p.ambient_contrib = s.ambient_contrib;
+    p.diffuse_contrib = s.diffuse_contrib * intensity;
+    p.specular_contrib = s.specular_contrib * intensity;
+    p.attenuation = s.attenuation;
+
+    return p;
+}
+
+fn spot_light(
+        frag_pos: vec3<f32>,
+        frag_normal: vec3<f32>,
+        view_pos: vec3<f32>,
+        light: SpotLight,
+        material: Material,
+) -> vec3<f32> {
+    let light_dir = normalize(light.pos - frag_pos); // TODO: this can be shared w/ point_light(...).
+    let theta = dot(light_dir, -light.direction);
+    let epsilon = light.cutoff - light.outer_cutoff;
+    let intensity = clamp((theta - light.outer_cutoff) / epsilon, 0.0, 1.0);
+
+    return point_light(
+        frag_pos,     // fragment world space position
+        frag_normal,  // fragment normal direction (normalized)
+        view_pos,     // camera world space position
+        spot_light_as_point_light(light, intensity),
+        material,
+    );
 }
 
 /// Calculate the diffuse color contribution from a light for a given material.
