@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 
 use crate::renderer::{
     debug::{DebugVertex, CUBE_INDICES, CUBE_VERTS},
-    shaders::{BindGroupLayouts, PerDebugMeshUniforms, PerFrameUniforms},
+    shaders::{BindGroupLayouts, PerDebugMeshShaderVals, PerFrameShaderVals},
     shading::PointLight,
     uniforms_buffers::UniformBuffer,
 };
@@ -18,7 +18,7 @@ pub struct LightDebugPass {
     render_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
     cube_index_buffer: wgpu::Buffer,
-    light_cube_uniforms: Vec<PerDebugMeshUniforms>, // TODO: Use model instancing.
+    light_cube_uniforms: Vec<PerDebugMeshShaderVals>, // TODO: Use model instancing.
 }
 
 impl LightDebugPass {
@@ -43,7 +43,7 @@ impl LightDebugPass {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let light_cube_uniforms = vec![PerDebugMeshUniforms::new(device, layouts)];
+        let light_cube_uniforms = vec![PerDebugMeshShaderVals::new(device, layouts)];
 
         // Load the shader used to render debug meshes.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -137,7 +137,7 @@ impl LightDebugPass {
         &self,
         output_view: &wgpu::TextureView,
         depth_buffer: &wgpu::TextureView,
-        per_frame_uniforms: &PerFrameUniforms, // TODO: Don't pass, move values to `prepare`.
+        per_frame_uniforms: &PerFrameShaderVals, // TODO: Don't pass, move values to `prepare`.
         command_encoder: &mut wgpu::CommandEncoder,
     ) {
         let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

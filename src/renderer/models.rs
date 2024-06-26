@@ -3,7 +3,7 @@ use std::{ops::Range, rc::Rc};
 use glam::{Mat4, Quat, Vec3};
 
 use super::{
-    shaders::{BindGroupLayouts, PerModelUniforms, PerSubmeshUniforms},
+    shaders::{BindGroupLayouts, PerModelShaderVals, PerSubmeshShaderVals},
     shading::Material,
     uniforms_buffers::UniformBuffer,
 };
@@ -24,7 +24,7 @@ pub struct Model {
     /// Shader uniform values associated with this model. The uniforms must be
     /// uploaded to the GPU after changes to position, rotation etc. This update
     /// must happen prior to drawing.
-    uniforms: PerModelUniforms,
+    uniforms: PerModelShaderVals,
     /// Reference to the shared mesh that this model will draw.
     mesh: Rc<Mesh>,
 }
@@ -43,7 +43,7 @@ impl Model {
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
-            uniforms: PerModelUniforms::new(device, layouts),
+            uniforms: PerModelShaderVals::new(device, layouts),
             mesh,
         };
 
@@ -53,12 +53,12 @@ impl Model {
 
     /// Get model uniforms.
     #[allow(dead_code)]
-    pub fn uniforms(&mut self) -> &PerModelUniforms {
+    pub fn uniforms(&mut self) -> &PerModelShaderVals {
         &self.uniforms
     }
 
     /// Get model uniforms.
-    pub fn uniforms_mut(&mut self) -> &mut PerModelUniforms {
+    pub fn uniforms_mut(&mut self) -> &mut PerModelShaderVals {
         &mut self.uniforms
     }
 
@@ -146,7 +146,7 @@ impl Mesh {
 /// A subpart of a larger mesh which has its own shader uniforms.
 pub struct Submesh {
     /// Uniform values associated with this submesh.
-    uniforms: PerSubmeshUniforms,
+    submesh_shader_vals: PerSubmeshShaderVals,
     /// The indices used when rendering this submesh.
     indices: Range<u32>,
     /// Base vertex used when rendering this submesh.
@@ -161,9 +161,9 @@ impl Submesh {
         base_vertex: i32,
         material: &Material,
     ) -> Self {
-        let uniforms = PerSubmeshUniforms::new(device, layouts, material);
+        let uniforms = PerSubmeshShaderVals::new(device, layouts, material);
         Self {
-            uniforms,
+            submesh_shader_vals: uniforms,
             indices,
             base_vertex,
         }
@@ -195,7 +195,7 @@ where
 
         // Draw each sub-mesh in the mesh.
         for submesh in &mesh.submeshes {
-            self.set_bind_group(2, submesh.uniforms.bind_group(), &[]);
+            self.set_bind_group(2, submesh.submesh_shader_vals.bind_group(), &[]);
             self.draw_indexed(submesh.indices.clone(), submesh.base_vertex, 0..1);
         }
     }

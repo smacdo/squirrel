@@ -15,7 +15,7 @@ use debug::DebugState;
 use glam::{Quat, Vec2, Vec3};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
-use shaders::{BindGroupLayouts, PerFrameUniforms};
+use shaders::{BindGroupLayouts, PerFrameShaderVals};
 use shading::{DirectionalLight, LightAttenuation, Material, PointLight, SpotLight};
 use tracing::{info, warn};
 use uniforms_buffers::UniformBuffer;
@@ -48,7 +48,7 @@ pub struct Renderer<'a> {
     surface_config: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    per_frame_uniforms: PerFrameUniforms,
+    per_frame_uniforms: PerFrameShaderVals,
     depth_pass: passes::DepthPass,
     light_debug_pass: passes::LightDebugPass,
     sys_time_elapsed: std::time::Duration,
@@ -196,7 +196,7 @@ impl<'a> Renderer<'a> {
 
         // Create a uniform per-frame buffer to store shader values such as
         // the camera projection matrix.
-        let mut per_frame_uniforms = PerFrameUniforms::new(&device, &bind_group_layouts);
+        let mut per_frame_uniforms = PerFrameShaderVals::new(&device, &bind_group_layouts);
         per_frame_uniforms.set_output_is_srgb(surface_format.is_srgb());
 
         // Load the default shader.

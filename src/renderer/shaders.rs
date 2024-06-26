@@ -22,14 +22,10 @@ use super::{
 // TODO(scott): Use a derive! macro to eliminate the copy-paste in these
 //              `per-frame-*` structs.
 
-// TODO(scott): Consider renaming `Per*Uniforms`` structs to `Per*ShaderInputs`
-//              to reflect that they can represent more than just the uniform
-//              values.
-
-/// Per-frame uniform values used by the standard shader model.
+/// Per-frame shader uniforms used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerFrameBufferData {
+struct PerFramePackedUniforms {
     pub view_projection: glam::Mat4,
     pub view_pos: glam::Vec4,
     pub directional_light: PackedDirectionalLight,
@@ -39,20 +35,18 @@ struct PerFrameBufferData {
     pub _padding_2: [f32; 2],
 }
 
-/// Repsonsible for storing per-frame shader uniform values and copying them to
-/// a GPU backed buffer accessible to shaders.
-pub struct PerFrameUniforms {
-    buffer: GenericUniformBuffer<PerFrameBufferData>,
+pub struct PerFrameShaderVals {
+    uniforms: GenericUniformBuffer<PerFramePackedUniforms>,
 }
 
-impl PerFrameUniforms {
-    /// Create a new per frame uniform buffer. Only one instance is needed per
-    /// renderer.
+impl PerFrameShaderVals {
+    /// Create a new per frame shader values struct. Only one instance is needed
+    /// per renderer.
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
         Self {
-            buffer: GenericUniformBuffer::<PerFrameBufferData>::new(
+            uniforms: GenericUniformBuffer::<PerFramePackedUniforms>::new(
                 device,
-                Some("per-frame uniforms"),
+                Some("per-frame shader vals"),
                 Default::default(),
                 &layouts.per_frame_layout,
             ),
@@ -61,32 +55,32 @@ impl PerFrameUniforms {
 
     /// Set view projection matrix.
     pub fn set_view_projection(&mut self, view_projection: glam::Mat4) {
-        self.buffer.values_mut().view_projection = view_projection;
+        self.uniforms.values_mut().view_projection = view_projection;
     }
 
     /// Set the world space position of the camera.
     pub fn set_view_pos(&mut self, view_pos: glam::Vec3) {
-        self.buffer.values_mut().view_pos = Vec4::new(view_pos.x, view_pos.y, view_pos.z, 1.0);
+        self.uniforms.values_mut().view_pos = Vec4::new(view_pos.x, view_pos.y, view_pos.z, 1.0);
     }
 
     /// Set the directional light for the scene.
     pub fn set_directional_light(&mut self, light: &DirectionalLight) {
-        self.buffer.values_mut().directional_light = light.clone().into();
+        self.uniforms.values_mut().directional_light = light.clone().into();
     }
 
     /// Set the spot light for the scene.
     pub fn set_spot_light(&mut self, light: &SpotLight) {
-        self.buffer.values_mut().spot_light = light.clone().into();
+        self.uniforms.values_mut().spot_light = light.clone().into();
     }
 
     /// Set time elapsed in seconds.
     pub fn set_time_elapsed_seconds(&mut self, time_elapsed: std::time::Duration) {
-        self.buffer.values_mut().time_elapsed_seconds = time_elapsed.as_secs_f32();
+        self.uniforms.values_mut().time_elapsed_seconds = time_elapsed.as_secs_f32();
     }
 
     /// Set if the output backbuffer format is SRGB or not.
     pub fn set_output_is_srgb(&mut self, is_srgb: bool) {
-        self.buffer.values_mut().output_is_srgb = if is_srgb { 1 } else { 0 };
+        self.uniforms.values_mut().output_is_srgb = if is_srgb { 1 } else { 0 };
     }
 
     /// Gets the bind group layout describing any instance of `PerFrameUniforms`.
@@ -107,43 +101,43 @@ impl PerFrameUniforms {
     }
 }
 
-impl UniformBuffer for PerFrameUniforms {
+impl UniformBuffer for PerFrameShaderVals {
     fn update_gpu(&self, queue: &wgpu::Queue) {
-        self.buffer.update_gpu(queue)
+        self.uniforms.update_gpu(queue)
     }
 
     fn bind_group(&self) -> &wgpu::BindGroup {
-        self.buffer.bind_group()
+        self.uniforms.bind_group()
     }
 
     fn is_dirty(&self) -> bool {
-        self.buffer.is_dirty()
+        self.uniforms.is_dirty()
     }
 }
 
 /// Per-model uniform values that are used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerModelBufferData {
+struct PerModelPackedUniforms {
     pub local_to_world: glam::Mat4,
     pub world_to_local: glam::Mat4,
     pub point_light: PackedPointLight,
 }
 
-/// Repsonsible for storing per-model shader uniform values and copying them to
-/// a GPU backed buffer accessible to shaders.
+/// Stores per-model shader values that are copied to the GPU prior to rendering
+/// a model.
 #[derive(Debug)]
-pub struct PerModelUniforms {
-    buffer: GenericUniformBuffer<PerModelBufferData>,
+pub struct PerModelShaderVals {
+    uniforms: GenericUniformBuffer<PerModelPackedUniforms>,
 }
 
-impl PerModelUniforms {
-    /// Create a new PerModelUniforms object. One instance per model.
+impl PerModelShaderVals {
+    /// Create a new PerModelShaderVals object. One instance per model.
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
         Self {
-            buffer: GenericUniformBuffer::<PerModelBufferData>::new(
+            uniforms: GenericUniformBuffer::<PerModelPackedUniforms>::new(
                 device,
-                Some("per-model uniforms"),
+                Some("per-model shader vals"),
                 Default::default(),
                 &layouts.per_model_layout,
             ),
@@ -153,9 +147,9 @@ impl PerModelUniforms {
     /// Set local to world transform matrix.
     #[allow(dead_code)]
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
-        self.buffer.values_mut().local_to_world = local_to_world;
-        self.buffer.values_mut().world_to_local = local_to_world.inverse();
-        debug_assert!(!self.buffer.values().world_to_local.is_nan());
+        self.uniforms.values_mut().local_to_world = local_to_world;
+        self.uniforms.values_mut().world_to_local = local_to_world.inverse();
+        debug_assert!(!self.uniforms.values().world_to_local.is_nan());
     }
 
     /// Set light information.
@@ -163,7 +157,7 @@ impl PerModelUniforms {
         debug_assert!(light.ambient >= 0.0 && light.ambient <= 1.0);
         debug_assert!(light.specular >= 0.0 && light.specular <= 1.0);
 
-        self.buffer.values_mut().point_light = light.clone().into();
+        self.uniforms.values_mut().point_light = light.clone().into();
     }
 
     /// Gets the bind group layout describing any instance of `PerModelUniforms`.
@@ -184,42 +178,42 @@ impl PerModelUniforms {
     }
 }
 
-impl UniformBuffer for PerModelUniforms {
+impl UniformBuffer for PerModelShaderVals {
     fn update_gpu(&self, queue: &wgpu::Queue) {
-        self.buffer.update_gpu(queue)
+        self.uniforms.update_gpu(queue)
     }
 
     fn bind_group(&self) -> &wgpu::BindGroup {
-        self.buffer.bind_group()
+        self.uniforms.bind_group()
     }
 
     fn is_dirty(&self) -> bool {
-        self.buffer.is_dirty()
+        self.uniforms.is_dirty()
     }
 }
 
 /// Per-submesh uniform values that are used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerSubmeshBufferData {
+struct PerSubmeshPackedUniforms {
     pub material: PackedMaterialConstants,
 }
 
 /// Responsible for storing per-submesh shader values used during a submesh
 /// rendering pass.
 #[derive(Debug)]
-pub struct PerSubmeshUniforms {
+pub struct PerSubmeshShaderVals {
     _tex_sampler: wgpu::Sampler,
     _diffuse_view: wgpu::TextureView,
     _specular_view: wgpu::TextureView,
     _emissive_view: wgpu::TextureView,
-    values: PerSubmeshBufferData,
+    uniforms: PerSubmeshPackedUniforms,
     gpu_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     is_dirty: std::cell::Cell<bool>,
 }
 
-impl PerSubmeshUniforms {
+impl PerSubmeshShaderVals {
     pub const UNIFORMS_BINDING_SLOT: u32 = 0;
     pub const SAMPLER_BINDING_SLOT: u32 = 1;
     pub const DIFFUSE_VIEW_BINDING_SLOT: u32 = 2;
@@ -240,7 +234,7 @@ impl PerSubmeshUniforms {
             .emissive_map
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let values = PerSubmeshBufferData {
+        let values = PerSubmeshPackedUniforms {
             material: material.clone().into(),
         };
 
@@ -285,7 +279,7 @@ impl PerSubmeshUniforms {
             _diffuse_view: diffuse_view,
             _specular_view: specular_view,
             _emissive_view: emissive_view,
-            values,
+            uniforms: values,
             gpu_buffer,
             bind_group,
             is_dirty: std::cell::Cell::new(false),
@@ -355,10 +349,10 @@ impl PerSubmeshUniforms {
     }
 }
 
-impl UniformBuffer for PerSubmeshUniforms {
+impl UniformBuffer for PerSubmeshShaderVals {
     fn update_gpu(&self, queue: &wgpu::Queue) {
         self.is_dirty.swap(&std::cell::Cell::new(false));
-        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&self.values));
+        queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&self.uniforms));
     }
 
     fn bind_group(&self) -> &wgpu::BindGroup {
@@ -373,27 +367,27 @@ impl UniformBuffer for PerSubmeshUniforms {
 /// Per-model uniform values that are used by the debug shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerDebugMeshBufferData {
+struct PerDebugMeshPackedUniforms {
     pub local_to_world: Mat4,
     pub color_tint: Vec3,
     pub _padding_1: f32,
 }
 
-/// Repsonsible for storing per-debug-mesh shader uniform values and copying
-/// them to a GPU backed buffer accessible to shaders.
+/// Repsonsible for storing per-debug-mesh shader values and copying them to a
+/// GPU backed buffer accessible to shaders.
 #[derive(Debug)]
-pub struct PerDebugMeshUniforms {
-    buffer: GenericUniformBuffer<PerDebugMeshBufferData>,
+pub struct PerDebugMeshShaderVals {
+    uniforms: GenericUniformBuffer<PerDebugMeshPackedUniforms>,
 }
 
-impl PerDebugMeshUniforms {
+impl PerDebugMeshShaderVals {
     /// Create a new PerDebugMeshUniforms object. One instance per debug mesh.
     pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
         Self {
-            buffer: GenericUniformBuffer::<PerDebugMeshBufferData>::new(
+            uniforms: GenericUniformBuffer::<PerDebugMeshPackedUniforms>::new(
                 device,
                 Some("per-debug-mesh uniforms"),
-                PerDebugMeshBufferData {
+                PerDebugMeshPackedUniforms {
                     local_to_world: Default::default(),
                     color_tint: Vec3::ONE,
                     _padding_1: Default::default(),
@@ -405,13 +399,13 @@ impl PerDebugMeshUniforms {
 
     /// Set local to world transform matrix.
     pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
-        self.buffer.values_mut().local_to_world = local_to_world;
+        self.uniforms.values_mut().local_to_world = local_to_world;
     }
 
     /// Set tint color.
     #[allow(dead_code)]
     pub fn set_color_tint(&mut self, color: glam::Vec3) {
-        self.buffer.values_mut().color_tint = color;
+        self.uniforms.values_mut().color_tint = color;
     }
 
     /// Gets the bind group layout describing any instance of `PerDebugMeshUniforms`.
@@ -432,17 +426,17 @@ impl PerDebugMeshUniforms {
     }
 }
 
-impl UniformBuffer for PerDebugMeshUniforms {
+impl UniformBuffer for PerDebugMeshShaderVals {
     fn update_gpu(&self, queue: &wgpu::Queue) {
-        self.buffer.update_gpu(queue)
+        self.uniforms.update_gpu(queue)
     }
 
     fn bind_group(&self) -> &wgpu::BindGroup {
-        self.buffer.bind_group()
+        self.uniforms.bind_group()
     }
 
     fn is_dirty(&self) -> bool {
-        self.buffer.is_dirty()
+        self.uniforms.is_dirty()
     }
 }
 
@@ -459,13 +453,13 @@ impl BindGroupLayouts {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             per_frame_layout: device
-                .create_bind_group_layout(&PerFrameUniforms::bind_group_layout_desc()),
+                .create_bind_group_layout(&PerFrameShaderVals::bind_group_layout_desc()),
             per_model_layout: device
-                .create_bind_group_layout(&PerModelUniforms::bind_group_layout_desc()),
+                .create_bind_group_layout(&PerModelShaderVals::bind_group_layout_desc()),
             per_submesh_layout: device
-                .create_bind_group_layout(&PerSubmeshUniforms::bind_group_layout_desc()),
+                .create_bind_group_layout(&PerSubmeshShaderVals::bind_group_layout_desc()),
             per_debug_mesh_layout: device
-                .create_bind_group_layout(&PerDebugMeshUniforms::bind_group_layout_desc()),
+                .create_bind_group_layout(&PerDebugMeshShaderVals::bind_group_layout_desc()),
         }
     }
 }
