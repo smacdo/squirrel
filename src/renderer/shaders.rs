@@ -8,15 +8,15 @@
 //! WebGPU requirement.
 mod packed_structs;
 
-use glam::{Mat4, Vec3, Vec4};
+use glam::Vec4;
 use packed_structs::{
     PackedDirectionalLight, PackedMaterialConstants, PackedPointLight, PackedSpotLight,
 };
 
 use super::{
+    gpu_buffers::{DynamicGpuBuffer, GenericUniformBuffer, UniformBindGroup},
     shading::{DirectionalLight, Material, PointLight, SpotLight},
     textures,
-    uniforms_buffers::{GenericUniformBuffer, UniformBuffer},
 };
 
 // TODO(scott): Use a derive! macro to eliminate the copy-paste in these
@@ -101,13 +101,15 @@ impl PerFrameShaderVals {
     }
 }
 
-impl UniformBuffer for PerFrameShaderVals {
-    fn update_gpu(&self, queue: &wgpu::Queue) {
-        self.uniforms.update_gpu(queue)
-    }
-
+impl UniformBindGroup for PerFrameShaderVals {
     fn bind_group(&self) -> &wgpu::BindGroup {
         self.uniforms.bind_group()
+    }
+}
+
+impl DynamicGpuBuffer for PerFrameShaderVals {
+    fn update_gpu(&self, queue: &wgpu::Queue) {
+        self.uniforms.update_gpu(queue)
     }
 
     fn is_dirty(&self) -> bool {
@@ -178,17 +180,19 @@ impl PerModelShaderVals {
     }
 }
 
-impl UniformBuffer for PerModelShaderVals {
+impl DynamicGpuBuffer for PerModelShaderVals {
     fn update_gpu(&self, queue: &wgpu::Queue) {
         self.uniforms.update_gpu(queue)
     }
 
-    fn bind_group(&self) -> &wgpu::BindGroup {
-        self.uniforms.bind_group()
-    }
-
     fn is_dirty(&self) -> bool {
         self.uniforms.is_dirty()
+    }
+}
+
+impl UniformBindGroup for PerModelShaderVals {
+    fn bind_group(&self) -> &wgpu::BindGroup {
+        self.uniforms.bind_group()
     }
 }
 
@@ -349,14 +353,10 @@ impl PerSubmeshShaderVals {
     }
 }
 
-impl UniformBuffer for PerSubmeshShaderVals {
+impl DynamicGpuBuffer for PerSubmeshShaderVals {
     fn update_gpu(&self, queue: &wgpu::Queue) {
         self.is_dirty.swap(&std::cell::Cell::new(false));
         queue.write_buffer(&self.gpu_buffer, 0, bytemuck::bytes_of(&self.uniforms));
-    }
-
-    fn bind_group(&self) -> &wgpu::BindGroup {
-        &self.bind_group
     }
 
     fn is_dirty(&self) -> bool {
@@ -364,79 +364,9 @@ impl UniformBuffer for PerSubmeshShaderVals {
     }
 }
 
-/// Per-model uniform values that are used by the debug shader model.
-#[repr(C)]
-#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PerDebugMeshPackedUniforms {
-    pub local_to_world: Mat4,
-    pub color_tint: Vec3,
-    pub _padding_1: f32,
-}
-
-/// Repsonsible for storing per-debug-mesh shader values and copying them to a
-/// GPU backed buffer accessible to shaders.
-#[derive(Debug)]
-pub struct PerDebugMeshShaderVals {
-    uniforms: GenericUniformBuffer<PerDebugMeshPackedUniforms>,
-}
-
-impl PerDebugMeshShaderVals {
-    /// Create a new PerDebugMeshUniforms object. One instance per debug mesh.
-    pub fn new(device: &wgpu::Device, layouts: &BindGroupLayouts) -> Self {
-        Self {
-            uniforms: GenericUniformBuffer::<PerDebugMeshPackedUniforms>::new(
-                device,
-                Some("per-debug-mesh uniforms"),
-                PerDebugMeshPackedUniforms {
-                    local_to_world: Default::default(),
-                    color_tint: Vec3::ONE,
-                    _padding_1: Default::default(),
-                },
-                &layouts.per_debug_mesh_layout,
-            ),
-        }
-    }
-
-    /// Set local to world transform matrix.
-    pub fn set_local_to_world(&mut self, local_to_world: glam::Mat4) {
-        self.uniforms.values_mut().local_to_world = local_to_world;
-    }
-
-    /// Set tint color.
-    #[allow(dead_code)]
-    pub fn set_color_tint(&mut self, color: glam::Vec3) {
-        self.uniforms.values_mut().color_tint = color;
-    }
-
-    /// Gets the bind group layout describing any instance of `PerDebugMeshUniforms`.
-    pub fn bind_group_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            label: Some("per-debug-mesh bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        }
-    }
-}
-
-impl UniformBuffer for PerDebugMeshShaderVals {
-    fn update_gpu(&self, queue: &wgpu::Queue) {
-        self.uniforms.update_gpu(queue)
-    }
-
+impl UniformBindGroup for PerSubmeshShaderVals {
     fn bind_group(&self) -> &wgpu::BindGroup {
-        self.uniforms.bind_group()
-    }
-
-    fn is_dirty(&self) -> bool {
-        self.uniforms.is_dirty()
+        &self.bind_group
     }
 }
 
@@ -445,7 +375,6 @@ pub struct BindGroupLayouts {
     pub per_frame_layout: wgpu::BindGroupLayout,
     pub per_model_layout: wgpu::BindGroupLayout,
     pub per_submesh_layout: wgpu::BindGroupLayout,
-    pub per_debug_mesh_layout: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -458,8 +387,6 @@ impl BindGroupLayouts {
                 .create_bind_group_layout(&PerModelShaderVals::bind_group_layout_desc()),
             per_submesh_layout: device
                 .create_bind_group_layout(&PerSubmeshShaderVals::bind_group_layout_desc()),
-            per_debug_mesh_layout: device
-                .create_bind_group_layout(&PerDebugMeshShaderVals::bind_group_layout_desc()),
         }
     }
 }

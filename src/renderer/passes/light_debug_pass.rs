@@ -1,24 +1,30 @@
 use glam::{Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
+// TODO: Draw spot light as a pyramid mesh.
+// TODO: Use model instancing for rendering the meshes.
 // TODO: Re-use the existing cube mesh, just update the shader to ignore
 //       unneeded attributes like normal.
 // TODO: Add debug state to `DebugState`, then pass to here ::update + ::draw
 
 use crate::renderer::{
     debug::{DebugVertex, CUBE_INDICES, CUBE_VERTS},
-    shaders::{BindGroupLayouts, PerDebugMeshShaderVals, PerFrameShaderVals},
+    gpu_buffers::{DynamicGpuBuffer, InstanceBuffer, UniformBindGroup},
+    shaders::{BindGroupLayouts, PerFrameShaderVals},
     shading::PointLight,
-    uniforms_buffers::UniformBuffer,
 };
 
 /// Provides a debug visualization layer to the renderer.
+///
+/// Lighting information must be specified every frame as the information is not
+/// retained between frames.
 pub struct LightDebugPass {
     /// Render pipeline for the debug overlay.
     render_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
     cube_index_buffer: wgpu::Buffer,
-    light_cube_uniforms: Vec<PerDebugMeshShaderVals>, // TODO: Use model instancing.
+    lamp_instances: DebugMeshInstanceBuffer,
+    lamp_count: usize,
 }
 
 impl LightDebugPass {
@@ -43,8 +49,6 @@ impl LightDebugPass {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let light_cube_uniforms = vec![PerDebugMeshShaderVals::new(device, layouts)];
-
         // Load the shader used to render debug meshes.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -57,17 +61,17 @@ impl LightDebugPass {
             layout: Some(
                 &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("debug pass pipeline layout"),
-                    bind_group_layouts: &[
-                        &layouts.per_frame_layout,
-                        &layouts.per_debug_mesh_layout,
-                    ],
+                    bind_group_layouts: &[&layouts.per_frame_layout],
                     push_constant_ranges: &[],
                 }),
             ),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[DebugVertex::desc()],
+                buffers: &[
+                    DebugVertex::desc(),
+                    DebugMeshInstanceBuffer::vertex_layout(),
+                ],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -109,26 +113,32 @@ impl LightDebugPass {
             render_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
-            light_cube_uniforms,
+            lamp_instances: DebugMeshInstanceBuffer::new(device),
+            lamp_count: 0,
         }
     }
 
     /// Set the world position of the scene light.
-    pub fn set_point_light(&mut self, light: &PointLight) {
-        self.light_cube_uniforms[0].set_local_to_world(Mat4::from_scale_rotation_translation(
-            Vec3::new(0.2, 0.2, 0.2),
-            Quat::IDENTITY,
-            light.position,
-        ))
+    pub fn add_point_light(&mut self, light: &PointLight) {
+        self.lamp_instances
+            .set_color_tint(self.lamp_count, light.color);
+        self.lamp_instances.set_local_to_world(
+            self.lamp_count,
+            Mat4::from_scale_rotation_translation(
+                Vec3::new(0.2, 0.2, 0.2),
+                Quat::IDENTITY,
+                light.position,
+            ),
+        );
+
+        self.lamp_count += 1;
     }
 
     /// Prepare for rendering by creating and updating all resources used during
     /// rendering.
     pub fn prepare(&mut self, queue: &wgpu::Queue) {
-        for lcu in &self.light_cube_uniforms {
-            if lcu.is_dirty() {
-                lcu.update_gpu(queue);
-            }
+        if self.lamp_instances.is_dirty() {
+            self.lamp_instances.update_gpu(queue)
         }
     }
 
@@ -166,12 +176,111 @@ impl LightDebugPass {
 
         render_pass.set_bind_group(0, per_frame_uniforms.bind_group(), &[]);
         render_pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.lamp_instances.gpu_buffer_slice(..));
         render_pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-        // Draw each debug cube mesh.
-        for lcu in &self.light_cube_uniforms {
-            render_pass.set_bind_group(1, lcu.bind_group(), &[]);
-            render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..1);
+        render_pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..(self.lamp_count as u32));
+    }
+
+    pub fn finish_frame(&mut self) {
+        self.lamp_count = 0
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct DebugMeshPackedInstance {
+    pub local_to_world: Mat4,
+    pub color_tint: Vec3,
+    pub _padding_1: f32,
+}
+
+#[derive(Debug)]
+struct DebugMeshInstanceBuffer {
+    buffer: InstanceBuffer<DebugMeshPackedInstance>,
+}
+
+impl DebugMeshInstanceBuffer {
+    /// Create a new PerDebugMeshUniforms object. One instance per debug mesh.
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self {
+            buffer: InstanceBuffer::<DebugMeshPackedInstance>::new(
+                device,
+                Some("debug mesh instance buffer"),
+                vec![
+                    DebugMeshPackedInstance {
+                        local_to_world: Default::default(),
+                        color_tint: Vec3::ONE,
+                        _padding_1: Default::default(),
+                    };
+                    100
+                ],
+            ),
         }
+    }
+
+    /// Set local to world transform matrix.
+    pub fn set_local_to_world(&mut self, index: usize, local_to_world: glam::Mat4) {
+        self.buffer.values_mut(index).local_to_world = local_to_world;
+    }
+
+    /// Set tint color.
+    pub fn set_color_tint(&mut self, index: usize, color: glam::Vec3) {
+        self.buffer.values_mut(index).color_tint = color;
+    }
+
+    /// Get the GPU buffer object used by this instance buffer.
+    pub fn gpu_buffer_slice<S>(&self, bounds: S) -> wgpu::BufferSlice
+    where
+        S: std::ops::RangeBounds<wgpu::BufferAddress>,
+    {
+        self.buffer.gpu_buffer_slice(bounds)
+    }
+
+    pub fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<DebugMeshPackedInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                // local_to_world: mat4 = 4 vec4
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                // tint_color: vec4
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+impl DynamicGpuBuffer for DebugMeshInstanceBuffer {
+    fn update_gpu(&self, queue: &wgpu::Queue) {
+        self.buffer.update_gpu(queue)
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
     }
 }

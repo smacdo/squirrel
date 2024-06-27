@@ -1,4 +1,5 @@
 mod debug;
+mod gpu_buffers;
 mod instancing;
 mod meshes;
 mod models;
@@ -6,19 +7,18 @@ mod passes;
 mod shaders;
 mod shading;
 mod textures;
-mod uniforms_buffers;
 
 use std::rc::Rc;
 use std::time::Duration;
 
 use debug::DebugState;
 use glam::{Quat, Vec2, Vec3};
+use gpu_buffers::{DynamicGpuBuffer, UniformBindGroup};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
 use shaders::{BindGroupLayouts, PerFrameShaderVals};
 use shading::{DirectionalLight, LightAttenuation, Material, PointLight, SpotLight};
 use tracing::{info, warn};
-use uniforms_buffers::UniformBuffer;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
@@ -427,7 +427,7 @@ impl<'a> Renderer<'a> {
         }
 
         // Passes / overlays.
-        self.light_debug_pass.set_point_light(&self.point_light);
+        self.light_debug_pass.add_point_light(&self.point_light);
         self.light_debug_pass.prepare(&self.queue);
     }
 
@@ -500,6 +500,8 @@ impl<'a> Renderer<'a> {
         // All done - submit commands for execution.
         self.queue.submit(std::iter::once(command_encoder.finish()));
         backbuffer.present();
+
+        self.light_debug_pass.finish_frame();
 
         Ok(())
     }

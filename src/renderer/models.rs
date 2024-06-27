@@ -2,10 +2,12 @@ use std::{ops::Range, rc::Rc};
 
 use glam::{Mat4, Quat, Vec3};
 
+use crate::renderer::gpu_buffers::UniformBindGroup;
+
 use super::{
+    gpu_buffers::DynamicGpuBuffer,
     shaders::{BindGroupLayouts, PerModelShaderVals, PerSubmeshShaderVals},
     shading::Material,
-    uniforms_buffers::UniformBuffer,
 };
 
 // TODO: Pass diffuse texture as a material.

@@ -4,14 +4,17 @@ struct PerFrameUniforms {
     output_is_srgb: u32, // TODO(scott): Pack bit flags in here.
 };
 
-struct PerModelUniforms {
-    local_to_world: mat4x4<f32>,
-    tint_color: vec3<f32>,
-}
-
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
+}
+
+struct InstanceInput {
+    @location(2) local_to_world_0: vec4<f32>,
+    @location(3) local_to_world_1: vec4<f32>,
+    @location(4) local_to_world_2: vec4<f32>,
+    @location(5) local_to_world_3: vec4<f32>,
+    @location(6) tint_color: vec4<f32>, // .w is unused
 }
 
 struct VertexOutput {
@@ -38,23 +41,21 @@ struct VertexOutput {
 @group(0) @binding(0)
 var<uniform> per_frame: PerFrameUniforms;
 
-@group(1) @binding(0)
-var<uniform> per_model: PerModelUniforms;
-
-// TODO(scott): Bind the texture view and sampler to the debug shader.
-//@group(2) @binding(0)
-//var debug_texture: texture_2d<f32>;
-//@group(2) @binding(1)
-//var debug_sampler: sampler;
-
 @vertex
-fn vs_main(mesh: VertexInput) -> VertexOutput {
+fn vs_main(mesh: VertexInput, instance: InstanceInput) -> VertexOutput {
     var v: VertexOutput;
 
-    v.color = per_model.tint_color;
+    let local_to_world = mat4x4<f32>(
+        instance.local_to_world_0,
+        instance.local_to_world_1,
+        instance.local_to_world_2,
+        instance.local_to_world_3,
+    );
+
+    v.color = instance.tint_color.xyz;
     v.tex_coords = mesh.tex_coords;
     v.position_cs = per_frame.view_projection
-        * per_model.local_to_world
+        * local_to_world
         * vec4<f32>(mesh.position, 1.0);
 
     return v;
