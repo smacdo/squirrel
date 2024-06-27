@@ -16,7 +16,7 @@ use glam::{Quat, Vec2, Vec3};
 use gpu_buffers::{DynamicGpuBuffer, UniformBindGroup};
 use meshes::{builtin_mesh, BuiltinMesh};
 use models::{DrawModel, Mesh, Model, Submesh};
-use shaders::{lit_shader, BindGroupLayouts, PerFrameShaderVals};
+use shaders::{lit_shader, BindGroupLayouts, PerFrameShaderVals, VertexLayout};
 use shading::{DirectionalLight, LightAttenuation, Material, PointLight, SpotLight};
 use tracing::{info, warn};
 use wgpu::util::DeviceExt;
@@ -257,7 +257,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[shaders::Vertex::desc()],
+                buffers: &[models::Vertex::vertex_buffer_layout()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,

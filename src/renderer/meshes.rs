@@ -1,7 +1,7 @@
 //! NOTES:
 //! Meshes vertex winding order is CCW.
 //! Builtin meshes are ordered bottom left to bottom right.
-use super::shaders::Vertex;
+use super::models::Vertex;
 
 /// A list of meshes that can be constructed by the engine without needing to
 /// load a model externally.

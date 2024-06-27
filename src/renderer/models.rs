@@ -6,7 +6,7 @@ use crate::renderer::gpu_buffers::UniformBindGroup;
 
 use super::{
     gpu_buffers::DynamicGpuBuffer,
-    shaders::{BindGroupLayouts, PerModelShaderVals, PerSubmeshShaderVals},
+    shaders::{BindGroupLayouts, PerModelShaderVals, PerSubmeshShaderVals, VertexLayout},
     shading::Material,
 };
 
@@ -199,6 +199,43 @@ where
         for submesh in &mesh.submeshes {
             self.set_bind_group(2, submesh.submesh_shader_vals.bind_group(), &[]);
             self.draw_indexed(submesh.indices.clone(), submesh.base_vertex, 0..1);
+        }
+    }
+}
+
+/// Vertex format used by model meshes.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tex_coords: [f32; 2],
+}
+
+impl VertexLayout for Vertex {
+    /// Get a description of the vertex layout for wgpu.
+    fn vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress
+                        + std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
         }
     }
 }
