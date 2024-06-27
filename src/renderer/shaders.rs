@@ -22,17 +22,31 @@ use super::{
 // TODO(scott): Use a derive! macro to eliminate the copy-paste in these
 //              `per-frame-*` structs.
 
+/// The standard lighting shader used to render objects with Phong lighting.
+///
+/// NOTE: The following constants _must_ be kept in sync with the lit shader:
+///  `MAX_POINT_LIGHTS`
+pub mod lit_shader {
+    /// The shader source code.
+    pub const SHADER_CODE: &str = include_str!("shaders/lit_shader.wgsl");
+    /// The maximum number of point lights that can be specified per model.
+    pub const MAX_POINT_LIGHTS: usize = 4;
+    pub const MAX_DIRECTIONAL_LIGHTS: usize = 3;
+    pub const MAX_SPOT_LIGHTS: usize = 2;
+}
+
 /// Per-frame shader uniforms used by the standard shader model.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct PerFramePackedUniforms {
     pub view_projection: glam::Mat4,
     pub view_pos: glam::Vec4,
-    pub directional_light: PackedDirectionalLight,
-    pub spot_light: PackedSpotLight,
-    pub time_elapsed_seconds: f32,
+    pub directional_lights: [PackedDirectionalLight; lit_shader::MAX_DIRECTIONAL_LIGHTS],
+    pub spot_lights: [PackedSpotLight; lit_shader::MAX_SPOT_LIGHTS],
+    pub directional_light_count: u32,
+    pub spot_light_count: u32,
     pub output_is_srgb: u32,
-    pub _padding_2: [f32; 2],
+    pub time_elapsed_seconds: f32,
 }
 
 pub struct PerFrameShaderVals {
@@ -63,14 +77,35 @@ impl PerFrameShaderVals {
         self.uniforms.values_mut().view_pos = Vec4::new(view_pos.x, view_pos.y, view_pos.z, 1.0);
     }
 
-    /// Set the directional light for the scene.
-    pub fn set_directional_light(&mut self, light: &DirectionalLight) {
-        self.uniforms.values_mut().directional_light = light.clone().into();
+    /// Clear all lighting information.
+    pub fn clear_lights(&mut self) {
+        self.uniforms.values_mut().directional_light_count = 0;
+        self.uniforms.values_mut().spot_light_count = 0;
     }
 
-    /// Set the spot light for the scene.
-    pub fn set_spot_light(&mut self, light: &SpotLight) {
-        self.uniforms.values_mut().spot_light = light.clone().into();
+    /// Add directional light to the scene.
+    pub fn add_directional_light(&mut self, light: &DirectionalLight) {
+        let uniforms = self.uniforms.values_mut();
+
+        debug_assert!(uniforms.directional_light_count < lit_shader::MAX_DIRECTIONAL_LIGHTS as u32);
+
+        if uniforms.directional_light_count < lit_shader::MAX_DIRECTIONAL_LIGHTS as u32 {
+            uniforms.directional_lights[uniforms.directional_light_count as usize] =
+                light.clone().into();
+            uniforms.directional_light_count += 1;
+        }
+    }
+
+    /// Add a spot light to the scene.
+    pub fn add_spot_light(&mut self, light: &SpotLight) {
+        let uniforms = self.uniforms.values_mut();
+
+        debug_assert!(uniforms.spot_light_count < lit_shader::MAX_SPOT_LIGHTS as u32);
+
+        if uniforms.spot_light_count < lit_shader::MAX_SPOT_LIGHTS as u32 {
+            uniforms.spot_lights[uniforms.spot_light_count as usize] = light.clone().into();
+            uniforms.spot_light_count += 1;
+        }
     }
 
     /// Set time elapsed in seconds.
@@ -123,7 +158,9 @@ impl DynamicGpuBuffer for PerFrameShaderVals {
 struct PerModelPackedUniforms {
     pub local_to_world: glam::Mat4,
     pub world_to_local: glam::Mat4,
-    pub point_light: PackedPointLight,
+    pub point_light: [PackedPointLight; lit_shader::MAX_POINT_LIGHTS],
+    pub point_light_count: u32,
+    pub _padding: [u32; 3],
 }
 
 /// Stores per-model shader values that are copied to the GPU prior to rendering
@@ -154,12 +191,24 @@ impl PerModelShaderVals {
         debug_assert!(!self.uniforms.values().world_to_local.is_nan());
     }
 
-    /// Set light information.
-    pub fn set_point_light(&mut self, light: &PointLight) {
+    /// Clear all lighting information.
+    pub fn clear_lights(&mut self) {
+        self.uniforms.values_mut().point_light_count = 0;
+    }
+
+    /// Add point light to the model.
+    pub fn add_point_light(&mut self, light: &PointLight) {
         debug_assert!(light.ambient >= 0.0 && light.ambient <= 1.0);
         debug_assert!(light.specular >= 0.0 && light.specular <= 1.0);
 
-        self.uniforms.values_mut().point_light = light.clone().into();
+        let uniforms = self.uniforms.values_mut();
+
+        if uniforms.point_light_count < lit_shader::MAX_POINT_LIGHTS as u32 {
+            debug_assert!(uniforms.point_light_count < lit_shader::MAX_POINT_LIGHTS as u32);
+
+            uniforms.point_light[uniforms.point_light_count as usize] = light.clone().into();
+            uniforms.point_light_count += 1;
+        }
     }
 
     /// Gets the bind group layout describing any instance of `PerModelUniforms`.

@@ -14,7 +14,7 @@ pub struct Material {
 }
 
 /// Point light.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PointLight {
     /// The world position of the light.
     pub position: Vec3,
@@ -30,7 +30,7 @@ pub struct PointLight {
     pub specular: f32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LightAttenuation {
     pub constant: f32,
     pub linear: f32,
@@ -38,7 +38,7 @@ pub struct LightAttenuation {
 }
 
 /// Directional light.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct DirectionalLight {
     /// The direction of the light pointing _away_ from the light source.
     pub direction: Vec3,
@@ -53,7 +53,7 @@ pub struct DirectionalLight {
 }
 
 /// A spot light.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SpotLight {
     /// The world position of the light.
     pub position: Vec3,

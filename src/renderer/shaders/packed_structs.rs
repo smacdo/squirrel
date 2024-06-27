@@ -68,6 +68,7 @@ pub struct PackedPointLight {
     pub position: Vec4,    // .w is ambient amount.
     pub color: Vec4,       // .w is specular amount.
     pub attenuation: Vec4, // xyzw: (constant, linear, quadratic, unused).
+    pub padding: Vec4,
 }
 
 impl From<PointLight> for PackedPointLight {
@@ -81,6 +82,7 @@ impl From<PointLight> for PackedPointLight {
                 val.attenuation.quadratic,
                 0.0,
             ),
+            padding: Vec4::ZERO,
         }
     }
 }
