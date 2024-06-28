@@ -164,11 +164,7 @@ impl CameraController for FreeLookCameraController {
         // TODO: Add speed modifier and adjust by time delta.
         self.fov_y += self.scroll_wheel_delta.unwrap_or_default();
 
-        if self.fov_y < 1.0 {
-            self.fov_y = 1.0;
-        } else if self.fov_y > 60.0 {
-            self.fov_y = 60.0;
-        }
+        self.fov_y = self.fov_y.clamp(1.0, 60.0);
 
         camera.set_fov_y(self.fov_y.to_radians());
 

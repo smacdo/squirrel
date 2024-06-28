@@ -60,7 +60,6 @@ pub struct Renderer<'a> {
     directional_light: DirectionalLight,
     spot_light: SpotLight,
     models: Vec<Model>,
-    pub time_to_update: f32,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
     // references to `window`.
@@ -384,7 +383,6 @@ impl<'a> Renderer<'a> {
             light_debug_pass,
             debug_state: Default::default(),
             window,
-            time_to_update: 0.0,
         }
     }
 

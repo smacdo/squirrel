@@ -117,10 +117,5 @@ impl From<SpotLight> for PackedSpotLight {
 /// Returns a new `Vec4` value that is the combination of a `Vec3` x, y and z
 /// and an addiitonal `w` value.
 pub fn vec3_w(xyz: Vec3, w: f32) -> Vec4 {
-    Vec4 {
-        x: xyz.x,
-        y: xyz.y,
-        z: xyz.z,
-        w,
-    }
+    Vec4::new(xyz.x, xyz.y, xyz.z, w)
 }
