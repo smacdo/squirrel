@@ -318,7 +318,7 @@ impl<'a> Renderer<'a> {
                         textures::from_image_bytes(
                             &device,
                             &queue,
-                            include_bytes!("assets/crate_diffuse.dds"),
+                            include_bytes!("../content/crate_diffuse.dds"),
                             Some("crate diffuse texture"),
                         )
                         .unwrap(),
@@ -328,7 +328,7 @@ impl<'a> Renderer<'a> {
                         textures::from_image_bytes(
                             &device,
                             &queue,
-                            include_bytes!("assets/crate_specular.dds"),
+                            include_bytes!("../content/crate_specular.dds"),
                             Some("crate specular texture"),
                         )
                         .unwrap(),
