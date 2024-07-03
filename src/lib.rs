@@ -2,6 +2,7 @@
 mod wasm_support;
 
 mod camera;
+mod content;
 mod renderer;
 mod gameplay;
 mod platform;
@@ -38,6 +39,11 @@ pub async fn run_main() {
     }
 
     tracing_log::LogTracer::init().expect("failed to initialize LogTracer");
+    
+    info!(
+        "demo data: {}",
+        platform::load_as_string("demo_cube.mtl").await.unwrap()
+    );
 
     // Create main window for rendering.
     log::info!("initializing event loop and creating a main window");
