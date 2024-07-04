@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     platform::{load_as_binary, load_as_string},
-    renderer::{self, models, shading, textures},
+    renderer::{self, models, shaders, shading, textures},
 };
 
 // TODO: Add ability to precompile models to a binary format that is loadable here.
@@ -15,13 +15,13 @@ use crate::{
 pub async fn load_obj_mesh<P>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
+    layouts: &shaders::BindGroupLayouts,
     obj_file_path: P,
 ) -> anyhow::Result<renderer::models::Mesh>
 where
     P: AsRef<Path> + std::fmt::Debug,
 {
-    let obj_text = load_as_string(obj_file_path).await?;
+    let obj_text = load_as_string(obj_file_path.as_ref()).await?;
     let obj_cursor = std::io::Cursor::new(obj_text); // TODO: move inline?
     let mut obj_buf_reader = std::io::BufReader::new(obj_cursor);
 
@@ -44,7 +44,7 @@ where
     .await?;
 
     // Create materials for each of the MTL material definitions.
-    // TODO: Share / cache these default textures.
+    // TODO: Renderer should handle missing texture maps, not default values here.
     let default_diffuse_map = Rc::new(textures::new_1x1(
         device,
         queue,
@@ -82,8 +82,17 @@ where
     }
 
     // Creates meshes for each of the obj models.
-
-    todo!("implement me! -- content.rs:20");
+    create_mesh(
+        device,
+        queue,
+        layouts,
+        &obj_models,
+        &materials,
+        obj_file_path
+            .as_ref()
+            .to_str()
+            .unwrap_or("invalid utf8 chars in obj file path"),
+    )
 }
 
 pub async fn create_material(
@@ -134,9 +143,68 @@ pub async fn create_material(
 pub fn create_mesh(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    model: tobj::Model,
+    layouts: &shaders::BindGroupLayouts,
+    obj_meshes: &[tobj::Model],
+    materials: &[shading::Material],
     name: &str,
 ) -> anyhow::Result<models::Mesh> {
+    // Allocate a single vertex and index buffer for the entire obj mesh.
+    let vertex_count: usize = obj_meshes.iter().map(|m| m.mesh.positions.len()).sum();
+    let index_count: usize = obj_meshes.iter().map(|m| m.mesh.indices.len()).sum();
+
+    let mut vertices: Vec<models::Vertex> = Vec::with_capacity(vertex_count);
+    let mut indices: Vec<u32> = Vec::with_capacity(index_count);
+
+    // Concatenate vertex and index buffer of each obj mesh into a single mesh
+    // with a single vertex and index buffer. Each obj "mesh" should be converted
+    // into a matching submesh.
+    let mut submeshes: Vec<models::Submesh> = Vec::with_capacity(obj_meshes.len());
+
+    for obj_mesh in obj_meshes {
+        submeshes.push(process_obj_mesh(
+            device,
+            queue,
+            layouts,
+            &obj_mesh,
+            &mut vertices,
+            &mut indices,
+            materials,
+        )?);
+    }
+
+    // Copy the newly assembled vertex buffer into a hardware GPU vertex buffer.
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(&format!("{name} vertex buffer")),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
+    // Create a hardware GPU index buffer using the tobj mesh's indices. No need
+    // to assemble an index buffer!
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(&format!("{name} index buffer")),
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+
+    Ok(models::Mesh::new(
+        vertex_buffer,
+        index_buffer,
+        indices.len() as u32,
+        wgpu::IndexFormat::Uint32,
+        submeshes,
+    ))
+}
+
+fn process_obj_mesh(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layouts: &shaders::BindGroupLayouts,
+    model: &tobj::Model,
+    vertices: &mut Vec<models::Vertex>,
+    indices: &mut Vec<u32>,
+    materials: &[shading::Material],
+) -> anyhow::Result<models::Submesh> {
     // This method assumes that `obj_model` was loaded with `triangulate = True`,
     // and `single_index = True`.
     assert!(
@@ -165,7 +233,15 @@ pub fn create_mesh(
 
     let has_normals = !model.mesh.normals.is_empty();
 
-    let verts: Vec<models::Vertex> = (0..model.mesh.positions.len() / 3)
+    // The obj mesh's index buffer do not account for vertex buffer sharing.
+    // Record the size of the shared buffer prior to copying and use this as the
+    // submesh's vertex offset.
+    let base_vertex = vertices.len() as i32;
+    let base_index = indices.len() as u32;
+
+    // Append this model's vertices and indices to the merged vertex and index
+    // buffers.
+    (0..model.mesh.positions.len() / 3)
         .map(|vp_i| models::Vertex {
             position: [
                 model.mesh.positions[vp_i * 3],
@@ -174,7 +250,7 @@ pub fn create_mesh(
             ],
             tex_coords: [
                 model.mesh.texcoords[vp_i * 2],
-                model.mesh.texcoords[vp_i * 3],
+                model.mesh.texcoords[vp_i * 2 + 1],
             ],
             normal: if has_normals {
                 [
@@ -186,29 +262,20 @@ pub fn create_mesh(
                 [0.0, 0.0, 0.0]
             },
         })
-        .collect::<Vec<_>>();
+        .for_each(|v| vertices.push(v));
 
-    // Copy the newly assembled vertex buffer into a hardware GPU vertex buffer.
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{name} vertex buffer")),
-        contents: bytemuck::cast_slice(&verts),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
+    model.mesh.indices.iter().for_each(|i| indices.push(*i));
 
-    // Create a hardware GPU index buffer using the tobj mesh's indices. No need
-    // to assemble an index buffer!
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{name} index buffer")),
-        contents: bytemuck::cast_slice(&model.mesh.indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
-
-    Ok(models::Mesh {
-        vertex_buffer,
-        index_buffer,
-        index_format: wgpu::IndexFormat::Uint32,
-        submeshes: todo!(),
-    })
+    Ok(models::Submesh::new(
+        device,
+        layouts,
+        base_index..(base_index + model.mesh.indices.len() as u32),
+        base_vertex,
+        &materials[model
+            .mesh
+            .material_id
+            .expect("TODO: Make material optional, let renderer handle empty material")],
+    ))
 }
 
 #[tracing::instrument(level = "info")]

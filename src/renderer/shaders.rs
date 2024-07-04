@@ -420,6 +420,7 @@ impl UniformBindGroup for PerSubmeshShaderVals {
 }
 
 /// A registry of bind group layouts used by this renderer.
+#[derive(Debug)]
 pub struct BindGroupLayouts {
     pub per_frame_layout: wgpu::BindGroupLayout,
     pub per_model_layout: wgpu::BindGroupLayout,
