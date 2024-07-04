@@ -2,11 +2,11 @@ mod debug;
 mod gpu_buffers;
 mod instancing;
 mod meshes;
-mod models;
+pub mod models;
 mod passes;
 mod shaders;
-mod shading;
-mod textures;
+pub mod shading;
+pub mod textures;
 
 use std::rc::Rc;
 use std::time::Duration;

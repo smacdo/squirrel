@@ -116,6 +116,8 @@ pub struct Mesh {
     vertex_buffer: wgpu::Buffer,
     /// A buffer storing this mesh's indices.
     index_buffer: wgpu::Buffer,
+    /// Size of the index buffer eleents.
+    index_format: wgpu::IndexFormat,
     /// Submeshes that draw a portion of the total mesh.
     submeshes: Vec<Submesh>,
 }
@@ -125,6 +127,7 @@ impl Mesh {
         vertex_buffer: wgpu::Buffer,
         index_buffer: wgpu::Buffer,
         index_count: u32,
+        index_format: wgpu::IndexFormat,
         submeshes: Vec<Submesh>,
     ) -> Self {
         assert!(
@@ -140,8 +143,13 @@ impl Mesh {
         Self {
             vertex_buffer,
             index_buffer,
+            index_format,
             submeshes,
         }
+    }
+
+    pub fn index_format(&self) -> wgpu::IndexFormat {
+        self.index_format
     }
 }
 
@@ -193,7 +201,7 @@ where
     fn draw_mesh(&mut self, mesh: &'a Mesh) {
         // Bind the mesh's vertex and index buffers.
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-        self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        self.set_index_buffer(mesh.index_buffer.slice(..), mesh.index_format());
 
         // Draw each sub-mesh in the mesh.
         for submesh in &mesh.submeshes {
