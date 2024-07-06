@@ -22,7 +22,7 @@ use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::content;
+use crate::content::{self, ContentManager};
 use crate::gameplay::ArcballCameraController;
 use crate::math_utils::rotate_around_pivot;
 use crate::{camera::Camera, gameplay::CameraController};
@@ -294,14 +294,16 @@ impl<'a> Renderer<'a> {
 
         // Generate a cube mesh and then spawn multiple instances of it for rendering.
         // TODO: TODO: Move buffer and other init stuff here into function.
-        /*
-            let cube_mesh = Rc::new(
-                content::load_obj_mesh(&device, &queue, &bind_group_layouts, "demo_cube.obj")
-                    .await
-                    .unwrap(),
-            );
-        */
+        let content = ContentManager::new(&device, &queue);
 
+        let cube_mesh = Rc::new(
+            content
+                .load_obj_mesh(&device, &queue, &bind_group_layouts, "demo_cube.obj")
+                .await
+                .unwrap(),
+        );
+
+        /*
         let (vertices, indices) = builtin_mesh(BuiltinMesh::Cube);
 
         let cube_mesh = Rc::new(Mesh::new(
@@ -354,6 +356,7 @@ impl<'a> Renderer<'a> {
                 },
             )],
         ));
+        */
 
         // Set up scene.
         let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
