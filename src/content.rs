@@ -1,4 +1,6 @@
-use std::{path::Path, rc::Rc};
+#![allow(dead_code)]
+
+use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use crate::{
     platform::load_as_binary,
@@ -7,16 +9,19 @@ use crate::{
 
 mod obj_model;
 
+// TODO: Implement basic content loader with caching support.
 // TODO: Add ability to precompile models to a binary format that is loadable here.
 
 pub struct ContentManager {
     default_textures: DefaultTextures,
+    _loaded_textures: RefCell<HashMap<String, Rc<wgpu::Texture>>>,
 }
 
 impl ContentManager {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         Self {
             default_textures: DefaultTextures::new(device, queue),
+            _loaded_textures: RefCell::new(HashMap::new()),
         }
     }
 
@@ -39,6 +44,43 @@ impl ContentManager {
         )
         .await
     }
+
+    // TODO: Implement cached texture loading.
+    /*
+    pub async fn load_texture<P>(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        file_path: P,
+    ) -> anyhow::Result<Rc<wgpu::Texture>>
+    where
+        P: AsRef<Path> + std::fmt::Debug,
+    {
+        // Resolve the texture file path to an unambiguous absolute file path
+        // and use this value as the shared key.
+        let file_path = std::fs::canonicalize(file_path.as_ref())?;
+        let cache_key = file_path.to_string_lossy();
+
+        // Return a copy of the already loaded texture if it exists in the
+        // texture cache.
+        if let Some(texture) = self.loaded_textures.borrow().get(cache_key.as_ref()) {
+            return Ok(texture.clone());
+        }
+
+        // The texture was not already in the cache. Load it from disk and add
+        // it to the cache before returning the texture to the caller.
+        Ok({
+            let cache_key = cache_key.into_owned();
+            let texture = Rc::new(load_texture_file(device, queue, file_path).await?);
+
+            self.loaded_textures
+                .borrow_mut()
+                .insert(cache_key, texture.clone());
+
+            texture
+        })
+    }
+    */
 }
 
 #[derive(Debug)]
