@@ -2,6 +2,11 @@ use std::rc::Rc;
 
 use glam::Vec3;
 
+pub const DEFAULT_AMBIENT_COLOR: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+pub const DEFAULT_DIFFUSE_COLOR: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+pub const DEFAULT_SPECULAR_COLOR: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+pub const DEFAULT_SPECULAR_POWER: f32 = 0.0;
+
 #[derive(Clone, Debug)]
 pub struct Material {
     pub ambient_color: Vec3,

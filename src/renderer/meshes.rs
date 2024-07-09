@@ -15,6 +15,7 @@ pub enum BuiltinMesh {
 
 /// Gets a builtin mesh for use in rendering. All builtin meshes are unit sized,
 /// meaning the vertices in the mesh range from [-1, 1] on the XYZ axis.
+#[allow(dead_code)]
 pub fn builtin_mesh(mesh_type: BuiltinMesh) -> (&'static [Vertex], &'static [u16]) {
     match mesh_type {
         BuiltinMesh::Triangle => (TRIANGLE_VERTS, TRIANGLE_INDICES),

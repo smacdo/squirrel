@@ -2,11 +2,11 @@ mod debug;
 mod gpu_buffers;
 mod instancing;
 mod meshes;
-mod models;
+pub mod models;
 mod passes;
-mod shaders;
-mod shading;
-mod textures;
+pub mod shaders;
+pub mod shading;
+pub mod textures;
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -292,6 +292,7 @@ impl<'a> Renderer<'a> {
         });
 
         // Generate a cube mesh and then spawn multiple instances of it for rendering.
+        // TODO: TODO: Move buffer and other init stuff here into function.
         let (vertices, indices) = builtin_mesh(BuiltinMesh::Cube);
 
         let cube_mesh = Rc::new(Mesh::new(
@@ -306,6 +307,7 @@ impl<'a> Renderer<'a> {
                 usage: wgpu::BufferUsages::INDEX,
             }),
             indices.len() as u32,
+            wgpu::IndexFormat::Uint16,
             vec![Submesh::new(
                 &device,
                 &bind_group_layouts,
