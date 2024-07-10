@@ -1,7 +1,13 @@
 //! NOTES:
 //! Meshes vertex winding order is CCW.
 //! Builtin meshes are ordered bottom left to bottom right.
-use super::models::Vertex;
+use wgpu::util::DeviceExt;
+
+use super::{
+    models::{Mesh, Submesh, Vertex},
+    shaders::BindGroupLayouts,
+    shading::Material,
+};
 
 /// A list of meshes that can be constructed by the engine without needing to
 /// load a model externally.
@@ -13,10 +19,43 @@ pub enum BuiltinMesh {
     Cube,
 }
 
-/// Gets a builtin mesh for use in rendering. All builtin meshes are unit sized,
-/// meaning the vertices in the mesh range from [-1, 1] on the XYZ axis.
+/// Generates a new `Mesh` object for the given builtin mesh.
+pub fn builtin_mesh(
+    device: &wgpu::Device,
+    layouts: &BindGroupLayouts,
+    mesh_type: BuiltinMesh,
+    material: &Material,
+) -> Mesh {
+    let (vertices, indices) = builtin_mesh_verts(mesh_type);
+
+    Mesh::new(
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Vertex Buffer"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Index Buffer"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        indices.len() as u32,
+        wgpu::IndexFormat::Uint16,
+        vec![Submesh::new(
+            device,
+            layouts,
+            0..indices.len() as u32,
+            0,
+            material,
+        )],
+    )
+}
+
+/// Gets a vertex buffer representing a builtin mesh for use in rendering. All
+/// builtin meshes are unit sized, meaning the vertices in the mesh range from
+/// [-1, 1] on the XYZ axis.
 #[allow(dead_code)]
-pub fn builtin_mesh(mesh_type: BuiltinMesh) -> (&'static [Vertex], &'static [u16]) {
+pub fn builtin_mesh_verts(mesh_type: BuiltinMesh) -> (&'static [Vertex], &'static [u16]) {
     match mesh_type {
         BuiltinMesh::Triangle => (TRIANGLE_VERTS, TRIANGLE_INDICES),
         BuiltinMesh::Rect => (RECT_VERTS, RECT_INDICES),

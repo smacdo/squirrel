@@ -3,17 +3,18 @@ mod wasm_support;
 
 mod camera;
 mod content;
-mod renderer;
+mod game_app;
 mod gameplay;
-mod platform;
 mod math_utils;
+mod platform;
+mod renderer;
 
-use gameplay::CameraController;
-use glam::Vec2;
+use game_app::multi_cube_demo::MultiCubeDemo;
+use game_app::GameAppHost;
 use platform::SystemTime;
 use renderer::Renderer;
-use tracing::{info, warn};
-use tracing_log::log::{self, error};
+use tracing::info;
+use tracing_log::log::{self};
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -39,7 +40,7 @@ pub async fn run_main() {
     }
 
     tracing_log::LogTracer::init().expect("failed to initialize LogTracer");
-    
+
     info!(
         "demo data: {}",
         platform::load_as_string("demo_cube.mtl").await.unwrap()
@@ -60,8 +61,12 @@ pub async fn run_main() {
 
     // Initialize the renderer.
     log::info!("creating render window");
+
     let mut renderer = Renderer::new(&main_window).await;
-    
+    let game = MultiCubeDemo::new(&mut renderer);
+
+    let mut game_host = GameAppHost::new(renderer, Box::new(game));
+
     // Main window event loop.
     //
     // NOTE: Window events are first sent to a custom input processer, and only
@@ -77,7 +82,7 @@ pub async fn run_main() {
 
     event_loop
         .run(move |event, control_flow| {
-            let renderer_window_id = renderer.window().id();
+            let renderer_window_id = game_host.renderer().window().id();
 
             match event {
                 Event::Resumed => {
@@ -86,7 +91,7 @@ pub async fn run_main() {
                 }
                 Event::WindowEvent { event, window_id } if window_id == renderer_window_id => {
                     // Allow the renderer to consume input events prior to processing them here.
-                    if renderer.input(&event) {
+                    if game_host.input(&event) {
                         // Event processed by renderer, do not continue.
                     } else {
                         // Event not processed by renderer, handle it here.
@@ -95,7 +100,7 @@ pub async fn run_main() {
                             WindowEvent::RedrawRequested => {
                                 // Request a redraw.
                                 // TODO(scott): Switch to continuous event loop.
-                                renderer.window.request_redraw();
+                                game_host.renderer().window.request_redraw();
 
                                 // Measure amount of time elapsed.
                                 let time_since_last_redraw = SystemTime::now() - last_redraw;
@@ -106,27 +111,11 @@ pub async fn run_main() {
                                 if !surface_configured {
                                     return;
                                 }
-                        
-                                // Update simulation state.
-                                renderer.update(time_since_last_redraw);
 
-                                // Render simulation.
-                                match renderer.render() {
-                                    Ok(_) => {}
-                                    // Reconfigure surface when lost:
-                                    Err(wgpu::SurfaceError::Lost) | Err(wgpu::SurfaceError::Outdated) => {
-                                        warn!("handling surface lost or outdated event by re-applying current window size");
-                                        renderer.resize(renderer.window_size())
-                                    }
-                                    // System is out of memory - bail out!
-                                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                                        panic!("WGPU out of memory error")
-                                    }
-                                    // Other errors (outdated, timeout) should be resolved by next frame
-                                    Err(e) => {
-                                        error!("WGPU error, will skip frame and try to ignore: {e:?}");
-                                    }
-                                }
+                                // Update simulation state and then render.
+                                // TODO: Fixed step updates with render logic.
+                                game_host.update_sim(time_since_last_redraw);
+                                game_host.render(time_since_last_redraw);
                             }
                             // Window close requested:
                             WindowEvent::CloseRequested => control_flow.exit(),
@@ -141,35 +130,26 @@ pub async fn run_main() {
                             }
                             // Window resized:
                             WindowEvent::Resized(physical_size) => {
-                                renderer.resize(physical_size)
+                                game_host.window_resized(physical_size.width, physical_size.height)
                             }
                             // Window DPI changed:
                             WindowEvent::ScaleFactorChanged { .. } => {
-                                // TODO(scott): The API diverges from the guide. Double check if correct.
-                                let new_size = renderer.window().inner_size();
-                                renderer.resize(new_size);
+                                game_host.scale_factor_changed()
                             }
                             _ => {}
                         }
                     }
                 }
-                Event::DeviceEvent { device_id: _device_id, event: device_event } => {
-                    match device_event {
-                        DeviceEvent::MouseMotion { delta } => {
-                            renderer.camera_controller.process_mouse_motion(Vec2 {
-                                x: delta.0 as f32,
-                                y: delta.1 as f32}
-                            )
-                        },
-                        DeviceEvent::MouseWheel { delta: MouseScrollDelta::LineDelta(delta_x, delta_y) } => {
-                            renderer.camera_controller.process_mouse_wheel(Vec2 {
-                                x: delta_y,
-                                y: delta_x
-                            })
-                        },
-                        _ => {}
-                    }
-                }
+                Event::DeviceEvent {
+                    device_id: _device_id,
+                    event: device_event,
+                } => match device_event {
+                    DeviceEvent::MouseMotion { delta } => game_host.mouse_motion(delta.0, delta.1),
+                    DeviceEvent::MouseWheel {
+                        delta: MouseScrollDelta::LineDelta(delta_x, delta_y),
+                    } => game_host.mouse_scroll_wheel(delta_x as f64, delta_y as f64),
+                    _ => {}
+                },
 
                 _ => {}
             }

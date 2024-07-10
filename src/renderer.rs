@@ -1,50 +1,43 @@
 mod debug;
 mod gpu_buffers;
 mod instancing;
-mod meshes;
+pub mod meshes;
 pub mod models;
 mod passes;
 pub mod shaders;
 pub mod shading;
 pub mod textures;
 
-use std::rc::Rc;
 use std::time::Duration;
 
 use debug::DebugState;
-use glam::{Quat, Vec2, Vec3};
+use glam::Vec3;
 use gpu_buffers::{DynamicGpuBuffer, UniformBindGroup};
-use meshes::{builtin_mesh, BuiltinMesh};
-use models::{DrawModel, Mesh, Model, Submesh};
+use models::{DrawModel, Model};
 use shaders::{lit_shader, BindGroupLayouts, PerFrameShaderVals, VertexLayout};
-use shading::{DirectionalLight, LightAttenuation, Material, PointLight, SpotLight};
+use shading::{DirectionalLight, PointLight, SpotLight};
 use tracing::{info, warn};
-use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::gameplay::ArcballCameraController;
-use crate::math_utils::rotate_around_pivot;
-use crate::{camera::Camera, gameplay::CameraController};
+use crate::camera::Camera;
 
-const INITIAL_CUBE_POS: &[Vec3] = &[
-    Vec3::new(0.0, 0.0, 0.0),
-    Vec3::new(2.0, 5.0, -15.0),
-    Vec3::new(-1.5, -2.2, -2.5),
-    Vec3::new(-3.8, -2.0, -12.3),
-    Vec3::new(2.4, -0.4, -3.5),
-    Vec3::new(-1.7, 3.0, 7.5),
-    Vec3::new(1.3, -2.0, -2.5),
-    Vec3::new(1.5, 2.0, -2.5),
-    Vec3::new(1.5, 0.2, -1.5),
-    Vec3::new(-1.3, 1.0, -1.5),
-];
+// TODO: Consider moving things like camera, lights, models to a scene container.
+// Doesn't have to be anything fancy since I'm not sure where all of this info
+// should live yet, eg does renderer own the scene or the game?
+
+// TODO: Remove pub access to renderer props like device, queue, bind group etc.
+// I'm deferring these decisions right now because I think this will need a lot
+// of working and involve figuring out how to do asset loading and shader swaps.
+
+// TODO: Renderer::new() should return Result<Self> and remove .unwrap().
 
 /// The renderer is pretty much everything right now while I ramp up on WGPU
 /// and other graphics tutorials to get a basic 2d/3d prototype up.
 pub struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub bind_group_layouts: BindGroupLayouts,
     surface_config: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
@@ -53,90 +46,20 @@ pub struct Renderer<'a> {
     light_debug_pass: passes::LightDebugPass,
     sys_time_elapsed: std::time::Duration,
     debug_state: DebugState,
-    // TODO(scott): extract gameplay code into separate module.
     pub camera: Camera,
-    pub camera_controller: ArcballCameraController,
-    point_lights: Vec<PointLight>,
-    directional_light: DirectionalLight,
-    spot_light: SpotLight,
-    models: Vec<Model>,
+    pub point_lights: Vec<PointLight>,
+    pub directional_lights: Vec<DirectionalLight>,
+    pub spot_lights: Vec<SpotLight>,
+    pub models: Vec<Model>,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
     // references to `window`.
     pub window: &'a Window,
 }
 
-// TODO: Renderer::new() should return Result<Self> and remove .unwrap().
-
 impl<'a> Renderer<'a> {
     const CAMERA_POS: Vec3 = Vec3::new(1.5, 1.0, 5.0);
     const CAMERA_LOOK_AT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
-    const POINT_LIGHTS: &'static [PointLight] = &[
-        PointLight {
-            position: Vec3::new(1.2, 1.0, 2.0),
-            attenuation: LightAttenuation {
-                constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
-            },
-            color: Vec3::new(0.8, 0.8, 0.8),
-            ambient: 0.0425,
-            specular: 1.0,
-        },
-        PointLight {
-            position: Vec3::new(-4.0, 2.0, -12.0),
-            attenuation: LightAttenuation {
-                constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
-            },
-            color: Vec3::new(1.0, 0.0, 0.0),
-            ambient: 0.0,
-            specular: 1.0,
-        },
-        PointLight {
-            position: Vec3::new(0.7, 0.2, 2.0),
-            attenuation: LightAttenuation {
-                constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
-            },
-            color: Vec3::new(1.0, 0.5, 0.0),
-            ambient: 0.0,
-            specular: 1.0,
-        },
-        PointLight {
-            position: Vec3::new(2.3, -3.3, -4.0),
-            attenuation: LightAttenuation {
-                constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
-            },
-            color: Vec3::new(0.0, 0.0, 1.0),
-            ambient: 0.0,
-            specular: 1.0,
-        },
-    ];
-    const DIRECTIONAL_LIGHT: DirectionalLight = DirectionalLight {
-        direction: Vec3::new(0.0, -1.0, 0.0),
-        color: Vec3::new(0.3, 0.3, 0.3),
-        ambient: 0.01,
-        specular: 0.2,
-    };
-    const SPOT_LIGHT: SpotLight = SpotLight {
-        position: Vec3::ZERO,
-        direction: Vec3::ZERO,
-        cutoff_radians: 0.2181662,       // 12.5 degree.
-        outer_cutoff_radians: 0.3054326, // 17.5 degree.
-        color: Vec3::new(0.8, 0.8, 0.8),
-        attenuation: LightAttenuation {
-            constant: 1.0,
-            linear: 0.09,
-            quadratic: 0.032,
-        },
-        ambient: 0.01,
-        specular: 1.0,
-    };
 
     pub async fn new(window: &'a Window) -> Self {
         let window_size = window.inner_size();
@@ -291,75 +214,6 @@ impl<'a> Renderer<'a> {
             multiview: None,
         });
 
-        // Generate a cube mesh and then spawn multiple instances of it for rendering.
-        // TODO: TODO: Move buffer and other init stuff here into function.
-        let (vertices, indices) = builtin_mesh(BuiltinMesh::Cube);
-
-        let cube_mesh = Rc::new(Mesh::new(
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Cube Vertex Buffer"),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Cube Index Buffer"),
-                contents: bytemuck::cast_slice(indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            indices.len() as u32,
-            wgpu::IndexFormat::Uint16,
-            vec![Submesh::new(
-                &device,
-                &bind_group_layouts,
-                0..indices.len() as u32,
-                0,
-                &Material {
-                    ambient_color: Vec3::new(1.0, 1.0, 1.0),
-                    diffuse_color: Vec3::new(1.0, 1.0, 1.0),
-                    diffuse_map: Rc::new(
-                        textures::from_image_bytes(
-                            &device,
-                            &queue,
-                            include_bytes!("../content/crate_diffuse.dds"),
-                            Some("crate diffuse texture"),
-                        )
-                        .unwrap(),
-                    ),
-                    specular_color: Vec3::new(1.0, 1.0, 1.0),
-                    specular_map: Rc::new(
-                        textures::from_image_bytes(
-                            &device,
-                            &queue,
-                            include_bytes!("../content/crate_specular.dds"),
-                            Some("crate specular texture"),
-                        )
-                        .unwrap(),
-                    ),
-                    specular_power: 64.0,
-                    emissive_map: Rc::new(textures::new_1x1(
-                        &device,
-                        &queue,
-                        [0, 0, 0],
-                        Some("default emission texture map"),
-                    )),
-                },
-            )],
-        ));
-
-        // Set up scene.
-        let mut models: Vec<Model> = Vec::with_capacity(INITIAL_CUBE_POS.len());
-
-        for initial_pos in INITIAL_CUBE_POS {
-            models.push(Model::new(
-                &device,
-                &bind_group_layouts,
-                *initial_pos,
-                Quat::IDENTITY,
-                Vec3::ONE,
-                cube_mesh.clone(),
-            ));
-        }
-
         // Set up additional render passes.
         let depth_pass = passes::DepthPass::new(&device, &surface_config);
         let light_debug_pass =
@@ -370,17 +224,17 @@ impl<'a> Renderer<'a> {
             surface,
             device,
             queue,
+            bind_group_layouts,
             surface_config,
             window_size,
             render_pipeline,
-            point_lights: Self::POINT_LIGHTS.to_vec(),
-            directional_light: Self::DIRECTIONAL_LIGHT,
-            spot_light: Self::SPOT_LIGHT,
-            models,
+            point_lights: Default::default(),
+            directional_lights: Default::default(),
+            spot_lights: Default::default(),
+            models: Default::default(),
             camera,
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
-            camera_controller: ArcballCameraController::new(),
             depth_pass,
             light_debug_pass,
             debug_state: Default::default(),
@@ -392,17 +246,17 @@ impl<'a> Renderer<'a> {
         self.window
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_width: u32, new_height: u32) {
         // TODO(scott); Ensure resize doesn't fire nonstop when drag-resizing.
-        if new_size.width == 0 || new_size.height == 0 {
+        if new_width == 0 || new_height == 0 {
             warn!(
                 "invalid width of {} or height {} when resizing",
-                new_size.width, new_size.height
+                new_width, new_height
             );
         } else {
-            self.window_size = new_size;
-            self.surface_config.width = new_size.width;
-            self.surface_config.height = new_size.height;
+            self.window_size = winit::dpi::PhysicalSize::new(new_width, new_height);
+            self.surface_config.width = new_width;
+            self.surface_config.height = new_height;
             self.surface.configure(&self.device, &self.surface_config);
 
             // Recreate the depth buffer to match the new window size.
@@ -410,53 +264,36 @@ impl<'a> Renderer<'a> {
 
             // Recreate the camera viewport to match the new window size.
             self.camera
-                .set_viewport_size(new_size.width, new_size.height)
+                .set_viewport_size(new_width, new_height)
                 .unwrap_or_else(|e| warn!("{e}"))
         }
     }
 
-    pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+    pub fn input(&mut self, event: &winit::event::WindowEvent) {
         self.debug_state.process_input(event);
-        self.camera_controller.process_input(event)
     }
 
-    pub fn update(&mut self, delta: Duration) {
-        // Allow camera controoler to control the scene's camera.
-        self.camera_controller
-            .update_camera(&mut self.camera, delta);
-
-        // Spot light follows the camera.
-        self.spot_light.position = self.camera.eye();
-        self.spot_light.direction = self.camera.forward();
-
+    pub fn prepare_render(&mut self, delta: Duration) {
         // Update per-frame shader uniforms.
         self.sys_time_elapsed += delta;
-
-        self.per_frame_uniforms.clear_lights();
 
         self.per_frame_uniforms
             .set_view_projection(self.camera.view_projection_matrix());
         self.per_frame_uniforms.set_view_pos(self.camera.eye());
         self.per_frame_uniforms
-            .add_directional_light(&self.directional_light);
-        self.per_frame_uniforms.add_spot_light(&self.spot_light);
-        self.per_frame_uniforms
             .set_time_elapsed_seconds(self.sys_time_elapsed);
 
-        self.per_frame_uniforms.update_gpu(&self.queue);
+        self.per_frame_uniforms.clear_lights();
 
-        // Make the primary light orbit around the scene.
-        if !self.point_lights.is_empty() {
-            let sys_time_secs: f32 = self.sys_time_elapsed.as_secs_f32();
-
-            let light_xy = rotate_around_pivot(
-                Vec2::new(0.0, 0.0),
-                1.0,
-                (sys_time_secs * 24.0).to_radians(),
-            );
-
-            self.point_lights[0].position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
+        for light in &self.directional_lights {
+            self.per_frame_uniforms.add_directional_light(light);
         }
+
+        for light in &self.spot_lights {
+            self.per_frame_uniforms.add_spot_light(light);
+        }
+
+        self.per_frame_uniforms.update_gpu(&self.queue);
 
         // Update uniforms for each model that will be rendered.
         for model in &mut self.models.iter_mut() {
