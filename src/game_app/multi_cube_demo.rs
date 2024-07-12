@@ -173,8 +173,8 @@ impl GameApp for MultiCubeDemo {
         Ok(())
     }
 
-    fn input(&mut self, _event: &winit::event::WindowEvent) -> bool {
-        false
+    fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+        self.camera_controller.process_input(event)
     }
 
     fn update_sim(&mut self, delta: std::time::Duration) {
