@@ -3,7 +3,7 @@ use std::rc::Rc;
 use glam::{Quat, Vec2, Vec3};
 
 use crate::{
-    gameplay::{ArcballCameraController, CameraController},
+    gameplay::{ArcballCameraController, CameraController, FreeLookCameraController},
     math_utils::rotate_around_pivot,
     renderer::{
         lighting::{DirectionalLight, LightAttenuation, PointLight, SpotLight},
@@ -16,8 +16,15 @@ use crate::{
 
 use super::GameApp;
 
+enum CameraControllerType {
+    Arcball,
+    Freelook,
+}
+
 pub struct MultiCubeDemo {
-    camera_controller: ArcballCameraController,
+    arcball: ArcballCameraController,
+    freelook: FreeLookCameraController,
+    camera_type: CameraControllerType,
     sim_time_elapsed: std::time::Duration,
 }
 
@@ -104,7 +111,9 @@ impl MultiCubeDemo {
 
     pub fn new() -> Self {
         Self {
-            camera_controller: ArcballCameraController::new(),
+            arcball: ArcballCameraController::new(),
+            freelook: FreeLookCameraController::new(),
+            camera_type: CameraControllerType::Arcball,
             sim_time_elapsed: Default::default(),
         }
     }
@@ -174,7 +183,36 @@ impl GameApp for MultiCubeDemo {
     }
 
     fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        self.camera_controller.process_input(event)
+        use winit::{
+            event::{ElementState, WindowEvent},
+            keyboard::{KeyCode, PhysicalKey},
+        };
+
+        // Handle keyboard input events specific to this demo scene:
+        //  `c` -> Toggle between arcball and freelook camera.
+        if let WindowEvent::KeyboardInput {
+            event: keyboard_input_event,
+            ..
+        } = event
+        {
+            match keyboard_input_event.physical_key {
+                PhysicalKey::Code(KeyCode::KeyC)
+                    if keyboard_input_event.state == ElementState::Released =>
+                {
+                    self.camera_type = match self.camera_type {
+                        CameraControllerType::Arcball => CameraControllerType::Freelook,
+                        CameraControllerType::Freelook => CameraControllerType::Arcball,
+                    };
+                }
+                _ => {}
+            }
+        }
+
+        // Forward input to the active camera controller.
+        match self.camera_type {
+            CameraControllerType::Arcball => self.arcball.process_input(event),
+            CameraControllerType::Freelook => self.freelook.process_input(event),
+        }
     }
 
     fn update_sim(&mut self, delta: std::time::Duration) {
@@ -183,8 +221,14 @@ impl GameApp for MultiCubeDemo {
 
     fn prepare_render(&mut self, renderer: &mut Renderer, delta: std::time::Duration) {
         // Allow camera controller to control the scene's camera.
-        self.camera_controller
-            .update_camera(&mut renderer.camera, delta);
+        match self.camera_type {
+            CameraControllerType::Arcball => {
+                self.arcball.update_camera(&mut renderer.camera, delta)
+            }
+            CameraControllerType::Freelook => {
+                self.freelook.update_camera(&mut renderer.camera, delta)
+            }
+        }
 
         // Spot light follows the camera.
         renderer.spot_lights[0].position = renderer.camera.eye();
@@ -203,16 +247,28 @@ impl GameApp for MultiCubeDemo {
     }
 
     fn mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        self.camera_controller.process_mouse_motion(Vec2 {
-            x: delta_x as f32,
-            y: delta_y as f32,
-        })
+        match self.camera_type {
+            CameraControllerType::Arcball => self.arcball.process_mouse_motion(Vec2 {
+                x: delta_x as f32,
+                y: delta_y as f32,
+            }),
+            CameraControllerType::Freelook => self.freelook.process_mouse_motion(Vec2 {
+                x: delta_x as f32,
+                y: delta_y as f32,
+            }),
+        }
     }
 
     fn mouse_scroll_wheel(&mut self, delta_x: f64, delta_y: f64) {
-        self.camera_controller.process_mouse_wheel(Vec2 {
-            x: delta_y as f32,
-            y: delta_x as f32,
-        })
+        match self.camera_type {
+            CameraControllerType::Arcball => self.arcball.process_mouse_wheel(Vec2 {
+                x: delta_y as f32,
+                y: delta_x as f32,
+            }),
+            CameraControllerType::Freelook => self.freelook.process_mouse_wheel(Vec2 {
+                x: delta_y as f32,
+                y: delta_x as f32,
+            }),
+        }
     }
 }
