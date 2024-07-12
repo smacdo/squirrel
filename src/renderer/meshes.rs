@@ -4,9 +4,9 @@
 use wgpu::util::DeviceExt;
 
 use super::{
+    materials::Material,
     models::{Mesh, Submesh, Vertex},
     shaders::BindGroupLayouts,
-    shading::Material,
 };
 
 /// A list of meshes that can be constructed by the engine without needing to

@@ -9,21 +9,17 @@ use crate::renderer::Renderer;
 /// Dispatches events coming from the underlying platform to the game for
 /// execution.
 pub struct GameAppHost<'a> {
-    renderer: Renderer<'a>,
+    renderer: Renderer<'a>, // TODO: Refactor so renderer does not need to be stored.
     game: Box<dyn GameApp>,
 }
-
-// TODO: Split update() into:
-//   -> update()  // this is the gameplay "logic" update method
-//   -> prepare() // this is the renderer's old "update" method.
 
 impl<'a> GameAppHost<'a> {
     pub fn new(renderer: Renderer<'a>, game: Box<dyn GameApp>) -> Self {
         Self { renderer, game }
     }
 
-    pub fn update_sim(&mut self, delta: Duration) {
-        self.game.update_sim(delta)
+    pub fn load_content(&mut self) -> anyhow::Result<()> {
+        self.game.load_content(&mut self.renderer)
     }
 
     pub fn renderer(&self) -> &Renderer {
@@ -36,6 +32,10 @@ impl<'a> GameAppHost<'a> {
         // also issue a warning that it was overridden?
         self.renderer.input(event);
         self.game.input(event)
+    }
+
+    pub fn update_sim(&mut self, delta: Duration) {
+        self.game.update_sim(delta)
     }
 
     pub fn render(&mut self, delta: Duration) {
@@ -72,10 +72,12 @@ impl<'a> GameAppHost<'a> {
         self.renderer.resize(new_size.width, new_size.height)
     }
 
+    /// Handles when the mouse moves.
     pub fn mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
         self.game.mouse_motion(delta_x, delta_y)
     }
 
+    /// Handles when the mouse wheel is scrolled up or down.
     pub fn mouse_scroll_wheel(&mut self, delta_x: f64, delta_y: f64) {
         self.game.mouse_scroll_wheel(delta_x, delta_y)
     }
@@ -83,10 +85,21 @@ impl<'a> GameAppHost<'a> {
 
 /// A specific game or demo scene implementation.
 pub trait GameApp {
-    fn input(&mut self, event: &winit::event::WindowEvent) -> bool;
+    /// Loads content required by the game prior to the start of rendering
+    fn load_content(&mut self, renderer: &mut Renderer) -> anyhow::Result<()>;
+
+    /// Advances the game's simulation state by the given `delta`.
     fn update_sim(&mut self, delta: Duration);
+
+    /// Prepares GPU resources for rendering in the upcoming frame.
     fn prepare_render(&mut self, renderer: &mut Renderer, delta: Duration);
 
+    /// Called anytime there is a new input even from the host.
+    fn input(&mut self, event: &winit::event::WindowEvent) -> bool;
+
+    /// Called by the host when the user's mouse moves.
     fn mouse_motion(&mut self, _delta_x: f64, _delta_y: f64) {}
+
+    /// Called by the host when user moves the scroll wheel up or down.
     fn mouse_scroll_wheel(&mut self, _delta_x: f64, _delta_y: f64) {}
 }

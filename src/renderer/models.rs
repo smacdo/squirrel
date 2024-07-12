@@ -6,8 +6,8 @@ use crate::renderer::gpu_buffers::UniformBindGroup;
 
 use super::{
     gpu_buffers::DynamicGpuBuffer,
+    materials::Material,
     shaders::{BindGroupLayouts, PerModelShaderVals, PerSubmeshShaderVals, VertexLayout},
-    shading::Material,
 };
 
 // TODO: Pass diffuse texture as a material.

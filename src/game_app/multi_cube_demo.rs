@@ -6,9 +6,10 @@ use crate::{
     gameplay::{ArcballCameraController, CameraController},
     math_utils::rotate_around_pivot,
     renderer::{
+        lighting::{DirectionalLight, LightAttenuation, PointLight, SpotLight},
+        materials::MaterialBuilder,
         meshes::{builtin_mesh, BuiltinMesh},
         models::Model,
-        shading::{DirectionalLight, LightAttenuation, Material, PointLight, SpotLight},
         textures, Renderer,
     },
 };
@@ -101,38 +102,42 @@ impl MultiCubeDemo {
         Vec3::new(-1.3, 1.0, -1.5),
     ];
 
-    pub fn new(renderer: &mut Renderer) -> Self {
+    pub fn new() -> Self {
+        Self {
+            camera_controller: ArcballCameraController::new(),
+            sim_time_elapsed: Default::default(),
+        }
+    }
+}
+
+impl GameApp for MultiCubeDemo {
+    fn load_content(&mut self, renderer: &mut Renderer) -> anyhow::Result<()> {
+        // TODO: Pass these values as raw parameters.
+        let device = &renderer.device;
+        let queue = &renderer.queue;
+        let default_textures = &renderer.default_textures;
+
         // Create the crate model.
-        let crate_material = Material {
-            ambient_color: Vec3::new(1.0, 1.0, 1.0),
-            diffuse_color: Vec3::new(1.0, 1.0, 1.0),
-            diffuse_map: Rc::new(
-                textures::from_image_bytes(
-                    &renderer.device,
-                    &renderer.queue,
-                    include_bytes!("../../content/crate_diffuse.dds"),
-                    Some("crate diffuse texture"),
-                )
-                .unwrap(),
-            ),
-            specular_color: Vec3::new(1.0, 1.0, 1.0),
-            specular_map: Rc::new(
-                textures::from_image_bytes(
-                    &renderer.device,
-                    &renderer.queue,
-                    include_bytes!("../../content/crate_specular.dds"),
-                    Some("crate specular texture"),
-                )
-                .unwrap(),
-            ),
-            specular_power: 64.0,
-            emissive_map: Rc::new(textures::new_1x1(
-                &renderer.device,
-                &renderer.queue,
-                [0, 0, 0],
-                Some("default emission texture map"),
-            )),
-        };
+        let diffuse_map = Rc::new(textures::from_image_bytes(
+            device,
+            queue,
+            include_bytes!("../../content/crate_diffuse.dds"),
+            Some("crate diffuse map"),
+        )?);
+
+        let specular_map = Rc::new(textures::from_image_bytes(
+            device,
+            queue,
+            include_bytes!("../../content/crate_specular.dds"),
+            Some("crate specular map"),
+        )?);
+
+        let crate_material = MaterialBuilder::new()
+            .specular_color(Vec3::new(1.0, 1.0, 1.0))
+            .specular_power(64.0)
+            .diffuse_map(diffuse_map)
+            .specular_map(specular_map)
+            .build(default_textures);
 
         let cube_mesh = Rc::new(builtin_mesh(
             &renderer.device,
@@ -165,14 +170,9 @@ impl MultiCubeDemo {
             renderer.point_lights.push(light.clone());
         }
 
-        Self {
-            camera_controller: ArcballCameraController::new(),
-            sim_time_elapsed: Default::default(),
-        }
+        Ok(())
     }
-}
 
-impl GameApp for MultiCubeDemo {
     fn input(&mut self, _event: &winit::event::WindowEvent) -> bool {
         false
     }

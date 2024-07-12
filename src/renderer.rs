@@ -1,11 +1,12 @@
 mod debug;
 mod gpu_buffers;
 mod instancing;
+pub mod lighting;
+pub mod materials;
 pub mod meshes;
 pub mod models;
 mod passes;
 pub mod shaders;
-pub mod shading;
 pub mod textures;
 
 use std::time::Duration;
@@ -13,13 +14,20 @@ use std::time::Duration;
 use debug::DebugState;
 use glam::Vec3;
 use gpu_buffers::{DynamicGpuBuffer, UniformBindGroup};
+use lighting::{DirectionalLight, PointLight, SpotLight};
 use models::{DrawModel, Model};
 use shaders::{lit_shader, BindGroupLayouts, PerFrameShaderVals, VertexLayout};
-use shading::{DirectionalLight, PointLight, SpotLight};
 use tracing::{info, warn};
 use winit::window::Window;
 
-use crate::camera::Camera;
+use crate::{camera::Camera, content::DefaultTextures};
+
+// TODO: Need to move wgpu device, queue and other values out of the renderer
+//       to allow for code to create and update GPU resources w/out reading pub
+//       properties from the renderer instance. This is especially needed to
+//       split content loading away from the renderer.
+//
+//       This strongly affects how GameApp::load_content(...) works!
 
 // TODO: Consider moving things like camera, lights, models to a scene container.
 // Doesn't have to be anything fancy since I'm not sure where all of this info
@@ -37,6 +45,7 @@ pub struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    pub default_textures: DefaultTextures,
     pub bind_group_layouts: BindGroupLayouts,
     surface_config: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>,
@@ -155,11 +164,13 @@ impl<'a> Renderer<'a> {
         let mut per_frame_uniforms = PerFrameShaderVals::new(&device, &bind_group_layouts);
         per_frame_uniforms.set_output_is_srgb(surface_format.is_srgb());
 
-        // Load the default shader.
+        // Load the default shader and associated resources.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(lit_shader::SHADER_CODE.into()),
         });
+
+        let default_textures = DefaultTextures::new(&device, &queue);
 
         // Create the default render pipeline layout and render pipeline objects.
         let render_pipeline_layout =
@@ -224,6 +235,7 @@ impl<'a> Renderer<'a> {
             surface,
             device,
             queue,
+            default_textures,
             bind_group_layouts,
             surface_config,
             window_size,

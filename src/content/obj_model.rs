@@ -1,11 +1,12 @@
 use std::{path::Path, rc::Rc};
 
+use glam::Vec3;
 use wgpu::util::DeviceExt;
 
 use crate::{
     content::load_texture_file,
     platform::load_as_string,
-    renderer::{self, models, shaders, shading},
+    renderer::{self, materials, models, shaders},
 };
 
 use super::DefaultTextures;
@@ -73,49 +74,36 @@ pub async fn create_material(
     queue: &wgpu::Queue,
     mat: tobj::Material,
     default_textures: &DefaultTextures,
-) -> anyhow::Result<shading::Material> {
-    pub async fn create_texture(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        maybe_file_path: Option<String>,
-        default_texture: &Rc<wgpu::Texture>,
-    ) -> anyhow::Result<Rc<wgpu::Texture>> {
-        match maybe_file_path {
-            Some(file_path) => Ok(Rc::new(load_texture_file(device, queue, &file_path).await?)),
-            None => Ok(default_texture.clone()),
-        }
+) -> anyhow::Result<materials::Material> {
+    let mut material = materials::MaterialBuilder::new();
+
+    if let Some(color) = mat.ambient {
+        material = material.ambient_color(Vec3::new(color[0], color[1], color[2]));
     }
 
-    Ok(shading::Material {
-        ambient_color: mat
-            .ambient
-            .map(|v| v.into())
-            .unwrap_or(shading::DEFAULT_AMBIENT_COLOR),
-        diffuse_color: mat
-            .diffuse
-            .map(|v| v.into())
-            .unwrap_or(shading::DEFAULT_DIFFUSE_COLOR),
-        diffuse_map: create_texture(
-            device,
-            queue,
-            mat.diffuse_texture,
-            &default_textures.diffuse_map,
-        )
-        .await?,
-        specular_color: mat
-            .specular
-            .map(|v| v.into())
-            .unwrap_or(shading::DEFAULT_SPECULAR_COLOR),
-        specular_map: create_texture(
-            device,
-            queue,
-            mat.shininess_texture,
-            &default_textures.specular_map,
-        )
-        .await?,
-        specular_power: mat.shininess.unwrap_or(shading::DEFAULT_SPECULAR_POWER),
-        emissive_map: default_textures.emissive_map.clone(),
-    })
+    if let Some(color) = mat.diffuse {
+        material = material.diffuse_color(Vec3::new(color[0], color[1], color[2]));
+    }
+
+    if let Some(color) = mat.specular {
+        material = material.specular_color(Vec3::new(color[0], color[1], color[2]));
+    }
+
+    if let Some(power) = mat.shininess {
+        material = material.specular_power(power);
+    }
+
+    if let Some(file_path) = mat.diffuse_texture {
+        material =
+            material.diffuse_map(Rc::new(load_texture_file(device, queue, &file_path).await?));
+    }
+
+    if let Some(file_path) = mat.specular_texture {
+        material =
+            material.specular_map(Rc::new(load_texture_file(device, queue, &file_path).await?));
+    }
+
+    Ok(material.build(default_textures))
 }
 
 /// Create a mesh out of the models in an obj model file.
@@ -127,7 +115,7 @@ fn create_mesh(
     device: &wgpu::Device,
     layouts: &shaders::BindGroupLayouts,
     obj_meshes: &[tobj::Model],
-    materials: &[shading::Material],
+    materials: &[materials::Material],
     name: &str,
 ) -> anyhow::Result<models::Mesh> {
     // Allocate a single vertex and index buffer for the entire obj mesh.
@@ -191,7 +179,7 @@ fn process_obj_mesh(
     model: &tobj::Model,
     vertices: &mut Vec<models::Vertex>,
     indices: &mut Vec<u32>,
-    materials: &[shading::Material],
+    materials: &[materials::Material],
 ) -> anyhow::Result<models::Submesh> {
     // This method assumes that `obj_model` was loaded with `triangulate = True`,
     // and `single_index = True`.

@@ -20,7 +20,10 @@
 //! requirement.
 use glam::{Vec3, Vec4};
 
-use crate::renderer::shading::{DirectionalLight, Material, PointLight, SpotLight};
+use crate::renderer::{
+    lighting::{DirectionalLight, PointLight, SpotLight},
+    materials::Material,
+};
 
 /// Rust struct with the same memory layout as the `PackedMaterialConstants`
 /// used by the lighting shaders.

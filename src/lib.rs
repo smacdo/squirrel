@@ -62,10 +62,12 @@ pub async fn run_main() {
     // Initialize the renderer.
     log::info!("creating render window");
 
-    let mut renderer = Renderer::new(&main_window).await;
-    let game = MultiCubeDemo::new(&mut renderer);
+    let mut game_host = GameAppHost::new(
+        Renderer::new(&main_window).await,
+        Box::new(MultiCubeDemo::new()),
+    );
 
-    let mut game_host = GameAppHost::new(renderer, Box::new(game));
+    game_host.load_content().unwrap();
 
     // Main window event loop.
     //

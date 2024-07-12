@@ -85,9 +85,9 @@ impl ContentManager {
 
 #[derive(Debug)]
 pub struct DefaultTextures {
-    diffuse_map: Rc<wgpu::Texture>,
-    specular_map: Rc<wgpu::Texture>,
-    emissive_map: Rc<wgpu::Texture>,
+    pub diffuse_map: Rc<wgpu::Texture>,
+    pub specular_map: Rc<wgpu::Texture>,
+    pub emissive_map: Rc<wgpu::Texture>,
 }
 
 impl DefaultTextures {

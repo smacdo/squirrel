@@ -15,7 +15,8 @@ use packed_structs::{
 
 use super::{
     gpu_buffers::{DynamicGpuBuffer, GenericUniformBuffer, UniformBindGroup},
-    shading::{DirectionalLight, Material, PointLight, SpotLight},
+    lighting::{DirectionalLight, PointLight, SpotLight},
+    materials::Material,
     textures,
 };
 

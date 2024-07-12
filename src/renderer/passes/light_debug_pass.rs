@@ -10,8 +10,8 @@ use wgpu::util::DeviceExt;
 use crate::renderer::{
     debug::{DebugVertex, CUBE_INDICES, CUBE_VERTS},
     gpu_buffers::{DynamicGpuBuffer, InstanceBuffer, UniformBindGroup},
+    lighting::PointLight,
     shaders::{BindGroupLayouts, PerFrameShaderVals},
-    shading::PointLight,
 };
 
 /// Provides a debug visualization layer to the renderer.
