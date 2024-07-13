@@ -26,11 +26,11 @@ pub trait CameraController {
 
     /// Accumulates mouse motion deltas until camera updates are applied in
     /// `update_camera`.
-    fn process_mouse_motion(&mut self, delta: Vec2);
+    fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64);
 
     /// Accumulates mouse scroll wheel deltas until camera updates are applied in
     /// `update_camera`.
-    fn process_mouse_wheel(&mut self, delta: Vec2);
+    fn process_mouse_wheel(&mut self, delta_x: f64, delta_y: f64);
 
     /// Applies updates to the camera that reflect the current state of this
     /// controller.
@@ -107,12 +107,14 @@ impl CameraController for FreeLookCameraController {
         }
     }
 
-    fn process_mouse_motion(&mut self, delta: Vec2) {
-        self.mouse_delta = Some(self.mouse_delta.unwrap_or_default() + delta);
+    fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
+        self.mouse_delta =
+            Some(self.mouse_delta.unwrap_or_default() + Vec2::new(delta_x as f32, delta_y as f32));
     }
 
-    fn process_mouse_wheel(&mut self, delta: Vec2) {
-        self.scroll_wheel_delta = Some(self.scroll_wheel_delta.unwrap_or_default() + delta.x);
+    fn process_mouse_wheel(&mut self, delta_x: f64, _delta_y: f64) {
+        self.scroll_wheel_delta =
+            Some(self.scroll_wheel_delta.unwrap_or_default() + delta_x as f32);
     }
 
     fn update_camera(&mut self, camera: &mut Camera, delta: Duration) {
@@ -237,14 +239,17 @@ impl CameraController for ArcballCameraController {
         }
     }
 
-    fn process_mouse_motion(&mut self, delta: Vec2) {
+    fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
         if self.allow_mouse_look {
-            self.mouse_motion = Some(self.mouse_motion.unwrap_or_default() + delta);
+            self.mouse_motion = Some(
+                self.mouse_motion.unwrap_or_default() + Vec2::new(delta_x as f32, delta_y as f32),
+            );
         }
     }
 
-    fn process_mouse_wheel(&mut self, delta: Vec2) {
-        self.mouse_scroll = Some(self.mouse_scroll.unwrap_or_default() + delta);
+    fn process_mouse_wheel(&mut self, delta_x: f64, delta_y: f64) {
+        self.mouse_scroll =
+            Some(self.mouse_scroll.unwrap_or_default() + Vec2::new(delta_x as f32, delta_y as f32));
     }
 
     fn update_camera(&mut self, camera: &mut Camera, delta: Duration) {

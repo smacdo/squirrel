@@ -251,27 +251,15 @@ impl GameApp for MultiCubeDemo {
 
     fn mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
         match self.camera_type {
-            CameraControllerType::Arcball => self.arcball.process_mouse_motion(Vec2 {
-                x: delta_x as f32,
-                y: delta_y as f32,
-            }),
-            CameraControllerType::Freelook => self.freelook.process_mouse_motion(Vec2 {
-                x: delta_x as f32,
-                y: delta_y as f32,
-            }),
+            CameraControllerType::Arcball => self.arcball.process_mouse_motion(delta_x, delta_y),
+            CameraControllerType::Freelook => self.freelook.process_mouse_motion(delta_x, delta_y),
         }
     }
 
     fn mouse_scroll_wheel(&mut self, delta_x: f64, delta_y: f64) {
         match self.camera_type {
-            CameraControllerType::Arcball => self.arcball.process_mouse_wheel(Vec2 {
-                x: delta_y as f32,
-                y: delta_x as f32,
-            }),
-            CameraControllerType::Freelook => self.freelook.process_mouse_wheel(Vec2 {
-                x: delta_y as f32,
-                y: delta_x as f32,
-            }),
+            CameraControllerType::Arcball => self.arcball.process_mouse_wheel(delta_x, delta_y),
+            CameraControllerType::Freelook => self.freelook.process_mouse_wheel(delta_x, delta_y),
         }
     }
 
