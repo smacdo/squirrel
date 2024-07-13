@@ -10,7 +10,8 @@ use crate::{
         materials::MaterialBuilder,
         meshes::{builtin_mesh, BuiltinMesh},
         models::Model,
-        textures, Renderer,
+        textures::{self, ColorSpace},
+        Renderer,
     },
 };
 
@@ -34,8 +35,8 @@ impl MultiCubeDemo {
             position: Vec3::new(1.2, 1.0, 2.0),
             attenuation: LightAttenuation {
                 constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
+                linear: 0.2,
+                quadratic: 0.01,
             },
             color: Vec3::new(0.8, 0.8, 0.8),
             ambient: 0.0425,
@@ -45,8 +46,8 @@ impl MultiCubeDemo {
             position: Vec3::new(-4.0, 2.0, -12.0),
             attenuation: LightAttenuation {
                 constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
+                linear: 0.2,
+                quadratic: 0.03,
             },
             color: Vec3::new(1.0, 0.0, 0.0),
             ambient: 0.0,
@@ -56,8 +57,8 @@ impl MultiCubeDemo {
             position: Vec3::new(0.7, 0.2, 2.0),
             attenuation: LightAttenuation {
                 constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
+                linear: 0.2,
+                quadratic: 0.03,
             },
             color: Vec3::new(1.0, 0.5, 0.0),
             ambient: 0.0,
@@ -67,8 +68,8 @@ impl MultiCubeDemo {
             position: Vec3::new(2.3, -3.3, -4.0),
             attenuation: LightAttenuation {
                 constant: 1.0,
-                linear: 0.09,
-                quadratic: 0.032,
+                linear: 0.2,
+                quadratic: 0.03,
             },
             color: Vec3::new(0.0, 0.0, 1.0),
             ambient: 0.0,
@@ -131,6 +132,7 @@ impl GameApp for MultiCubeDemo {
             device,
             queue,
             include_bytes!("../../content/crate_diffuse.dds"),
+            ColorSpace::Srgb,
             Some("crate diffuse map"),
         )?);
 
@@ -138,6 +140,7 @@ impl GameApp for MultiCubeDemo {
             device,
             queue,
             include_bytes!("../../content/crate_specular.dds"),
+            ColorSpace::Srgb,
             Some("crate specular map"),
         )?);
 

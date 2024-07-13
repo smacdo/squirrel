@@ -527,8 +527,9 @@ fn light_specular(
         light_contrib: f32,
         mat_color: vec3<f32>,
         mat_shininess: f32) -> vec3<f32> {
-    let reflect_dir = reflect(-light_dir, normal);
-    let specular_amount = pow(max(dot(view_dir, reflect_dir), 0.0), mat_shininess);
+    //let reflect_dir = reflect(-light_dir, normal);
+    let halfway_dir = normalize(light_dir + view_dir);
+    let specular_amount = pow(max(dot(normal, halfway_dir), 0.0), mat_shininess);
     return light_color
         * light_contrib
         * specular_amount

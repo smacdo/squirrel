@@ -4,7 +4,10 @@ use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use crate::{
     platform::load_as_binary,
-    renderer::{self, shaders, textures},
+    renderer::{
+        self, shaders,
+        textures::{self, ColorSpace},
+    },
 };
 
 mod obj_model;
@@ -97,18 +100,21 @@ impl DefaultTextures {
                 device,
                 queue,
                 [255, 255, 255],
+                textures::ColorSpace::Linear,
                 Some("default diffuse texture"),
             )),
             specular_map: Rc::new(textures::new_1x1(
                 device,
                 queue,
                 [0, 0, 0],
+                textures::ColorSpace::Linear,
                 Some("default specular texture"),
             )),
             emissive_map: Rc::new(textures::new_1x1(
                 device,
                 queue,
                 [0, 0, 0],
+                textures::ColorSpace::Linear,
                 Some("default emissive texture"),
             )),
         }
@@ -120,6 +126,7 @@ pub async fn load_texture_file<P>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     file_path: P,
+    color_space: ColorSpace,
 ) -> anyhow::Result<wgpu::Texture>
 where
     P: AsRef<Path> + std::fmt::Debug,
@@ -129,6 +136,7 @@ where
         device,
         queue,
         &file_bytes,
+        color_space,
         Some(
             file_path
                 .as_ref()

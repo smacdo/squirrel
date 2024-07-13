@@ -6,7 +6,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     content::load_texture_file,
     platform::load_as_string,
-    renderer::{self, materials, models, shaders},
+    renderer::{self, materials, models, shaders, textures::ColorSpace},
 };
 
 use super::DefaultTextures;
@@ -94,13 +94,15 @@ pub async fn create_material(
     }
 
     if let Some(file_path) = mat.diffuse_texture {
-        material =
-            material.diffuse_map(Rc::new(load_texture_file(device, queue, &file_path).await?));
+        material = material.diffuse_map(Rc::new(
+            load_texture_file(device, queue, &file_path, ColorSpace::Srgb).await?,
+        ));
     }
 
     if let Some(file_path) = mat.specular_texture {
-        material =
-            material.specular_map(Rc::new(load_texture_file(device, queue, &file_path).await?));
+        material = material.specular_map(Rc::new(
+            load_texture_file(device, queue, &file_path, ColorSpace::Srgb).await?,
+        ));
     }
 
     Ok(material.build(default_textures))

@@ -5,6 +5,16 @@ use image::{GenericImageView, Rgba, RgbaImage};
 // TODO: Create a high level sharable texture type that can be updated at runtime
 //       (`prepare(device, queue)`) to allow for reload when changed functionality.
 
+/// Color space encoding for an image. SRGB refers to gamma encoded images that
+/// are typically diffuse, albedo or similiar texture maps.
+#[derive(Debug)]
+pub enum ColorSpace {
+    /// Gamma encoded color space.
+    Srgb,
+    /// Linear encoded color space.
+    Linear,
+}
+
 /// Creates a new 1x1 texture with the given pixel color. `pixel` is an RGB
 /// triplet with 0 being none, and 255 being maximum.
 ///
@@ -14,11 +24,12 @@ pub fn new_1x1(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     pixel: [u8; 3],
+    color_space: ColorSpace,
     label: Option<&str>,
 ) -> wgpu::Texture {
     let mut image = RgbaImage::new(1, 1);
     image.put_pixel(0, 0, Rgba([pixel[0], pixel[1], pixel[2], 255]));
-    from_image(device, queue, image.into(), label)
+    from_image(device, queue, image.into(), color_space, label)
 }
 
 /// Construct a texture represented by `image_bytes` which must be a JPEG, PNG
@@ -28,10 +39,11 @@ pub fn from_image_bytes(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     image_bytes: &[u8],
+    color_space: ColorSpace,
     label: Option<&str>,
 ) -> Result<wgpu::Texture> {
     let image = image::load_from_memory(image_bytes)?;
-    Ok(from_image(device, queue, image, label))
+    Ok(from_image(device, queue, image, color_space, label))
 }
 
 /// Create a wgpu texture object from a `DynamicImage`.`
@@ -42,6 +54,7 @@ pub fn from_image(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     image: image::DynamicImage,
+    color_space: ColorSpace,
     label: Option<&str>,
 ) -> wgpu::Texture {
     let rgba = image.to_rgba8();
@@ -59,7 +72,10 @@ pub fn from_image(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        format: match color_space {
+            ColorSpace::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+            ColorSpace::Linear => wgpu::TextureFormat::Rgba8Unorm,
+        },
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
