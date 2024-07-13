@@ -2,7 +2,7 @@ pub mod multi_cube_demo;
 
 use std::time::Duration;
 
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use crate::renderer::{scene::Scene, Renderer};
 
@@ -11,11 +11,16 @@ use crate::renderer::{scene::Scene, Renderer};
 pub struct GameAppHost<'a> {
     renderer: Renderer<'a>, // TODO: Refactor so renderer does not need to be stored.
     game: Box<dyn GameApp>,
+    mouse_captured: bool,
 }
 
 impl<'a> GameAppHost<'a> {
     pub fn new(renderer: Renderer<'a>, game: Box<dyn GameApp>) -> Self {
-        Self { renderer, game }
+        Self {
+            renderer,
+            game,
+            mouse_captured: false,
+        }
     }
 
     pub fn load_content(&mut self) -> anyhow::Result<()> {
@@ -79,6 +84,32 @@ impl<'a> GameAppHost<'a> {
     /// Handles when the mouse wheel is scrolled up or down.
     pub fn mouse_scroll_wheel(&mut self, delta_x: f64, delta_y: f64) {
         self.game.mouse_scroll_wheel(delta_x, delta_y)
+    }
+
+    pub fn is_mouse_captured(&self) -> bool {
+        self.mouse_captured
+    }
+
+    pub fn set_mouse_captured(&mut self, is_captured: bool) {
+        let window = self.renderer.window();
+
+        // Lock the cursor to the screen.
+        if let Err(_e) = window.set_cursor_grab(if is_captured {
+            winit::window::CursorGrabMode::Locked
+        } else {
+            winit::window::CursorGrabMode::None
+        }) {
+            // TODO: Handle error by manually locking the cursor?
+            //       First check when this can fail.
+            warn!("failed to lock/unlock cursor")
+        };
+
+        // The cursor should be hidden when the mouse is captured.
+        window.set_cursor_visible(!is_captured);
+
+        // Track the mouse capture state.
+        debug!("mouse_captured = {is_captured}");
+        self.mouse_captured = is_captured;
     }
 }
 

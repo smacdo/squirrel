@@ -13,7 +13,7 @@ use game_app::multi_cube_demo::MultiCubeDemo;
 use game_app::GameAppHost;
 use platform::SystemTime;
 use renderer::Renderer;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_log::log::{self};
 use winit::{
     event::*,
@@ -76,11 +76,9 @@ pub async fn run_main() {
     //       event dispatcher below.
     log::info!("starting main window event loop");
     let mut last_redraw = SystemTime::now();
+    let mut capture_mouse = false;
 
     let mut surface_configured = false;
-
-    // EXPERIMENT: Recreate and upload the texture after resume event fires.
-    let _recreate_texture_once = false;
 
     event_loop
         .run(move |event, control_flow| {
@@ -92,61 +90,84 @@ pub async fn run_main() {
                     surface_configured = true;
                 }
                 Event::WindowEvent { event, window_id } if window_id == renderer_window_id => {
-                    // Allow the renderer to consume input events prior to processing them here.
-                    if game_host.input(&event) {
-                        // Event processed by renderer, do not continue.
-                    } else {
-                        // Event not processed by renderer, handle it here.
-                        match event {
-                            // Redraw window:
-                            WindowEvent::RedrawRequested => {
-                                // Request a redraw.
-                                // TODO(scott): Switch to continuous event loop.
-                                game_host.renderer().window.request_redraw();
+                    // Allow the renderer to consume input events prior to
+                    // processing them here.
+                    game_host.input(&event);
 
-                                // Measure amount of time elapsed.
-                                let time_since_last_redraw = SystemTime::now() - last_redraw;
-                                last_redraw = SystemTime::now();
+                    // Handle other events directly.
+                    match event {
+                        // Redraw window:
+                        WindowEvent::RedrawRequested => {
+                            // Request a redraw.
+                            // TODO(scott): Switch to continuous event loop.
+                            game_host.renderer().window.request_redraw();
 
-                                // Don't try rendering until the window surface
-                                // is ready.
-                                if !surface_configured {
-                                    return;
-                                }
+                            // Measure amount of time elapsed.
+                            let time_since_last_redraw = SystemTime::now() - last_redraw;
+                            last_redraw = SystemTime::now();
 
-                                // Update simulation state and then render.
-                                // TODO: Fixed step updates with render logic.
-                                game_host.update_sim(time_since_last_redraw);
-                                game_host.render(time_since_last_redraw);
+                            // Don't try rendering until the window surface
+                            // is ready.
+                            if !surface_configured {
+                                return;
                             }
-                            // Window close requested:
-                            WindowEvent::CloseRequested => control_flow.exit(),
-                            // Keyboard input:
-                            WindowEvent::KeyboardInput { event, .. } => {
-                                // Quit when escape is pressed.
-                                if event.state == ElementState::Pressed {
-                                    if let Key::Named(NamedKey::Escape) = event.logical_key {
-                                        control_flow.exit()
-                                    }
-                                }
-                            }
-                            // Window resized:
-                            WindowEvent::Resized(physical_size) => {
-                                game_host.window_resized(physical_size.width, physical_size.height)
-                            }
-                            // Window DPI changed:
-                            WindowEvent::ScaleFactorChanged { .. } => {
-                                game_host.scale_factor_changed()
-                            }
-                            _ => {}
+
+                            // Update simulation state and then render.
+                            // TODO: Fixed step updates with render logic.
+                            game_host.update_sim(time_since_last_redraw);
+                            game_host.render(time_since_last_redraw);
                         }
+                        // Window close requested:
+                        WindowEvent::CloseRequested => control_flow.exit(),
+                        // Keyboard input:
+                        WindowEvent::KeyboardInput { event, .. } => {
+                            // Stop capturing the mouse when escape pressed
+                            // otherwise if not captured exit the program.
+                            if let (Key::Named(NamedKey::Escape), ElementState::Released) =
+                                (event.logical_key, event.state)
+                            {
+                                if game_host.is_mouse_captured() {
+                                    game_host.set_mouse_captured(false);
+                                } else {
+                                    control_flow.exit()
+                                }
+                            }
+                        }
+                        // Mouse button:
+                        WindowEvent::MouseInput {
+                            state: mouse_button_state,
+                            ..
+                        } => {
+                            // Any click will recapture the mouse if it was not
+                            // already captured.
+                            if mouse_button_state == ElementState::Pressed
+                                && !game_host.is_mouse_captured()
+                            {
+                                game_host.set_mouse_captured(true);
+                            }
+                        }
+                        // Window focus gained or lost:
+                        WindowEvent::Focused(is_focused) => {
+                            game_host.set_mouse_captured(is_focused);
+                        }
+                        // Window resized:
+                        WindowEvent::Resized(physical_size) => {
+                            game_host.window_resized(physical_size.width, physical_size.height)
+                        }
+                        // Window DPI changed:
+                        WindowEvent::ScaleFactorChanged { .. } => game_host.scale_factor_changed(),
+                        _ => {}
                     }
                 }
                 Event::DeviceEvent {
                     device_id: _device_id,
                     event: device_event,
                 } => match device_event {
-                    DeviceEvent::MouseMotion { delta } => game_host.mouse_motion(delta.0, delta.1),
+                    DeviceEvent::MouseMotion { delta } => {
+                        game_host.mouse_motion(delta.0, delta.1);
+
+                        if capture_mouse {}
+                    }
                     DeviceEvent::MouseWheel {
                         delta: MouseScrollDelta::LineDelta(delta_x, delta_y),
                     } => game_host.mouse_scroll_wheel(delta_x as f64, delta_y as f64),
