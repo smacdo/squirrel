@@ -34,3 +34,8 @@ $ microserver
 
 Open up your web browser to `http://localhost:9090` and you should see the
 demo scene!
+
+# Demos
+## Input bindings
+- `c` to swap between an arcball camera controller and a freelook (FPS) camera controller.
+- `z` to toggle the depth buffer visualizer.
