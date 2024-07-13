@@ -1,13 +1,13 @@
-use std::{ops::Range, rc::Rc};
+use std::{cell::Cell, ops::Range, rc::Rc};
 
-use glam::{Mat4, Quat, Vec3};
+use glam::{Quat, Vec3};
 
 use crate::renderer::gpu_buffers::UniformBindGroup;
 
 use super::{
-    gpu_buffers::DynamicGpuBuffer,
     materials::Material,
     shaders::{BindGroupLayouts, PerModelShaderVals, PerSubmeshShaderVals, VertexLayout},
+    ModelShaderValsKey,
 };
 
 // TODO: Pass diffuse texture as a material.
@@ -26,7 +26,11 @@ pub struct Model {
     /// Shader uniform values associated with this model. The uniforms must be
     /// uploaded to the GPU after changes to position, rotation etc. This update
     /// must happen prior to drawing.
-    uniforms: PerModelShaderVals,
+    pub model_sv_key: ModelShaderValsKey,
+    /// Specifies if the translation, rotation or scale of the model has changed
+    /// since the last time those values were copied to the shader_vals instance
+    /// backing this model.
+    model_sv_dirty: Cell<bool>,
     /// Reference to the shared mesh that this model will draw.
     mesh: Rc<Mesh>,
 }
@@ -34,18 +38,18 @@ pub struct Model {
 impl Model {
     /// Create a new model.
     pub fn new(
-        device: &wgpu::Device,
-        layouts: &BindGroupLayouts,
+        model_shader_vals: ModelShaderValsKey,
+        mesh: Rc<Mesh>,
         translation: Vec3,
         rotation: Quat,
         scale: Vec3,
-        mesh: Rc<Mesh>,
     ) -> Self {
         let mut m = Self {
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
-            uniforms: PerModelShaderVals::new(device, layouts),
+            model_sv_key: model_shader_vals,
+            model_sv_dirty: Cell::new(true), // Force an initial update.
             mesh,
         };
 
@@ -53,15 +57,26 @@ impl Model {
         m
     }
 
-    /// Get model uniforms.
-    #[allow(dead_code)]
-    pub fn uniforms(&mut self) -> &PerModelShaderVals {
-        &self.uniforms
+    /// Model translation offset.
+    pub fn translation(&self) -> Vec3 {
+        self.translation
     }
 
-    /// Get model uniforms.
-    pub fn uniforms_mut(&mut self) -> &mut PerModelShaderVals {
-        &mut self.uniforms
+    /// Model rotation.
+    pub fn rotation(&self) -> Quat {
+        self.rotation
+    }
+
+    /// Model scale.
+    pub fn scale(&self) -> Vec3 {
+        self.scale
+    }
+
+    /// Returns true if the values stored in this model (eg translation,
+    /// rotation or scale) are out of date with respect to the values stored in
+    /// the model's shader values uniform object.
+    pub fn is_model_sv_dirty(&self) -> bool {
+        self.model_sv_dirty.get()
     }
 
     /// Set position, rotation and scale of this model.
@@ -75,38 +90,36 @@ impl Model {
         self.scale = scale;
         self.rotation = rotation;
         self.translation = translation;
-
-        self.uniforms
-            .set_local_to_world(Mat4::from_scale_rotation_translation(
-                scale,
-                rotation,
-                translation,
-            ));
+        self.model_sv_dirty.replace(true);
     }
 
     /// Set the position of this model.
     #[allow(dead_code)]
     pub fn set_translation(&mut self, translation: Vec3) {
-        self.set_scale_rotation_translation(self.scale, self.rotation, translation)
+        self.translation = translation;
+        self.model_sv_dirty.replace(true);
     }
 
     /// Set the rotation of the model.
     #[allow(dead_code)]
     pub fn set_rotation(&mut self, rotation: Quat) {
-        self.set_scale_rotation_translation(self.scale, rotation, self.translation)
+        self.rotation = rotation;
+        self.model_sv_dirty.replace(true);
     }
 
     /// Set the scale of the model.
     #[allow(dead_code)]
     pub fn set_scale(&mut self, scale: Vec3) {
-        self.set_scale_rotation_translation(scale, self.rotation, self.translation)
+        self.scale = scale;
+        self.model_sv_dirty.replace(true);
     }
 
-    /// Prepare the model for rendering.
-    pub fn prepare(&self, queue: &wgpu::Queue) {
-        if self.uniforms.is_dirty() {
-            self.uniforms.update_gpu(queue);
-        }
+    /// Unsets the `model_sv_dirty`.
+    ///
+    /// This should only be called by the renderer after it has succesfully
+    /// update the model's shader values uniform object.
+    pub fn mark_model_sv_updated(&self) {
+        self.model_sv_dirty.replace(false);
     }
 }
 
@@ -182,7 +195,7 @@ impl Submesh {
 
 /// A trait for types that are capable of rendering models and meshes.
 pub trait DrawModel<'a> {
-    fn draw_model(&mut self, model: &'a Model);
+    fn draw_model(&mut self, model: &'a Model, model_sv: &'a PerModelShaderVals);
     fn draw_mesh(&mut self, mesh: &'a Mesh);
 }
 
@@ -190,11 +203,11 @@ impl<'rpass, 'a> DrawModel<'a> for wgpu::RenderPass<'rpass>
 where
     'a: 'rpass,
 {
-    fn draw_model(&mut self, model: &'a Model) {
+    fn draw_model(&mut self, model: &'a Model, model_sv: &'a PerModelShaderVals) {
         // Bind the per-model uniforms for this model before drawing the mesh.
-        debug_assert!(!model.uniforms.is_dirty());
+        debug_assert!(!model.is_model_sv_dirty());
 
-        self.set_bind_group(1, model.uniforms.bind_group(), &[]);
+        self.set_bind_group(1, model_sv.bind_group(), &[]);
         self.draw_mesh(&model.mesh);
     }
 

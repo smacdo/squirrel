@@ -11,6 +11,7 @@ use crate::renderer::{
     debug::{DebugVertex, CUBE_INDICES, CUBE_VERTS},
     gpu_buffers::{DynamicGpuBuffer, InstanceBuffer, UniformBindGroup},
     lighting::PointLight,
+    scene::Scene,
     shaders::{BindGroupLayouts, PerFrameShaderVals},
 };
 
@@ -136,7 +137,11 @@ impl LightDebugPass {
 
     /// Prepare for rendering by creating and updating all resources used during
     /// rendering.
-    pub fn prepare(&mut self, queue: &wgpu::Queue) {
+    pub fn prepare(&mut self, queue: &wgpu::Queue, scene: &Scene) {
+        for light in &scene.point_lights {
+            self.add_point_light(light);
+        }
+
         if self.lamp_instances.is_dirty() {
             self.lamp_instances.update_gpu(queue)
         }

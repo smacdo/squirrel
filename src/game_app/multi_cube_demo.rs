@@ -9,7 +9,7 @@ use crate::{
         lighting::{DirectionalLight, LightAttenuation, PointLight, SpotLight},
         materials::MaterialBuilder,
         meshes::{builtin_mesh, BuiltinMesh},
-        models::Model,
+        scene::Scene,
         textures::{self, ColorSpace},
         Renderer,
     },
@@ -27,6 +27,7 @@ pub struct MultiCubeDemo {
     freelook: FreeLookCameraController,
     camera_type: CameraControllerType,
     sim_time_elapsed: std::time::Duration,
+    scene: Scene,
 }
 
 impl MultiCubeDemo {
@@ -116,6 +117,7 @@ impl MultiCubeDemo {
             freelook: FreeLookCameraController::new(),
             camera_type: CameraControllerType::Arcball,
             sim_time_elapsed: Default::default(),
+            scene: Default::default(),
         }
     }
 }
@@ -161,25 +163,23 @@ impl GameApp for MultiCubeDemo {
         // Spawn a buch of copies of the crate model.
 
         // Set up scene.
-        renderer.models.reserve(Self::INITIAL_CUBE_POS.len());
+        self.scene.models.reserve(Self::INITIAL_CUBE_POS.len());
 
         for initial_pos in Self::INITIAL_CUBE_POS {
-            renderer.models.push(Model::new(
-                &renderer.device,
-                &renderer.bind_group_layouts,
+            self.scene.models.push(renderer.create_model(
+                cube_mesh.clone(),
                 *initial_pos,
                 Quat::IDENTITY,
                 Vec3::ONE,
-                cube_mesh.clone(),
             ));
         }
 
         // This demo has one directional, one spot and three point lights.
-        renderer.directional_lights.push(Self::DIRECTIONAL_LIGHT);
-        renderer.spot_lights.push(Self::SPOT_LIGHT);
+        self.scene.directional_lights.push(Self::DIRECTIONAL_LIGHT);
+        self.scene.spot_lights.push(Self::SPOT_LIGHT);
 
         for light in Self::POINT_LIGHTS.iter() {
-            renderer.point_lights.push(light.clone());
+            self.scene.point_lights.push(light.clone());
         }
 
         Ok(())
@@ -234,8 +234,8 @@ impl GameApp for MultiCubeDemo {
         }
 
         // Spot light follows the camera.
-        renderer.spot_lights[0].position = renderer.camera.eye();
-        renderer.spot_lights[0].direction = renderer.camera.forward();
+        self.scene.spot_lights[0].position = renderer.camera.eye();
+        self.scene.spot_lights[0].direction = renderer.camera.forward();
 
         // Make the primary light orbit around the scene.
         let sys_time_secs: f32 = self.sim_time_elapsed.as_secs_f32();
@@ -246,7 +246,7 @@ impl GameApp for MultiCubeDemo {
             (sys_time_secs * 24.0).to_radians(),
         );
 
-        renderer.point_lights[0].position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
+        self.scene.point_lights[0].position = Vec3::new(light_xy.x, light_xy.y, light_xy.y);
     }
 
     fn mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
@@ -273,5 +273,9 @@ impl GameApp for MultiCubeDemo {
                 y: delta_x as f32,
             }),
         }
+    }
+
+    fn render_scene(&self) -> &Scene {
+        &self.scene
     }
 }

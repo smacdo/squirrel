@@ -6,17 +6,19 @@ pub mod materials;
 pub mod meshes;
 pub mod models;
 mod passes;
+pub mod scene;
 pub mod shaders;
 pub mod textures;
 
-use std::time::Duration;
+use std::{rc::Rc, time::Duration};
 
 use debug::DebugState;
-use glam::Vec3;
+use glam::{Mat4, Quat, Vec3};
 use gpu_buffers::{DynamicGpuBuffer, UniformBindGroup};
-use lighting::{DirectionalLight, PointLight, SpotLight};
-use models::{DrawModel, Model};
-use shaders::{lit_shader, BindGroupLayouts, PerFrameShaderVals, VertexLayout};
+use models::{DrawModel, Mesh, Model};
+use scene::Scene;
+use shaders::{lit_shader, BindGroupLayouts, PerFrameShaderVals, PerModelShaderVals, VertexLayout};
+use slotmap::{new_key_type, SlotMap};
 use tracing::{info, warn};
 use winit::window::Window;
 
@@ -29,6 +31,8 @@ use crate::{camera::Camera, content::DefaultTextures};
 //
 //       This strongly affects how GameApp::load_content(...) works!
 
+// TODO: Move camera out of the renderer.
+
 // TODO: Consider moving things like camera, lights, models to a scene container.
 // Doesn't have to be anything fancy since I'm not sure where all of this info
 // should live yet, eg does renderer own the scene or the game?
@@ -38,6 +42,8 @@ use crate::{camera::Camera, content::DefaultTextures};
 // of working and involve figuring out how to do asset loading and shader swaps.
 
 // TODO: Renderer::new() should return Result<Self> and remove .unwrap().
+
+new_key_type! { pub struct ModelShaderValsKey; }
 
 /// The renderer is pretty much everything right now while I ramp up on WGPU
 /// and other graphics tutorials to get a basic 2d/3d prototype up.
@@ -56,10 +62,7 @@ pub struct Renderer<'a> {
     sys_time_elapsed: std::time::Duration,
     debug_state: DebugState,
     pub camera: Camera,
-    pub point_lights: Vec<PointLight>,
-    pub directional_lights: Vec<DirectionalLight>,
-    pub spot_lights: Vec<SpotLight>,
-    pub models: Vec<Model>,
+    pub model_shader_vals: SlotMap<ModelShaderValsKey, PerModelShaderVals>,
     // XXX(scott): `window` must be the last field in the struct because it needs
     // to be dropped after `surface`, because the surface contains unsafe
     // references to `window`.
@@ -240,11 +243,8 @@ impl<'a> Renderer<'a> {
             surface_config,
             window_size,
             render_pipeline,
-            point_lights: Default::default(),
-            directional_lights: Default::default(),
-            spot_lights: Default::default(),
-            models: Default::default(),
             camera,
+            model_shader_vals: SlotMap::with_key(),
             sys_time_elapsed: Default::default(),
             per_frame_uniforms,
             depth_pass,
@@ -285,48 +285,65 @@ impl<'a> Renderer<'a> {
         self.debug_state.process_input(event);
     }
 
-    pub fn prepare_render(&mut self, delta: Duration) {
-        // Update per-frame shader uniforms.
+    fn prepare_render(&mut self, scene: &Scene, delta: Duration) {
+        // Update renderer per-frame shader uniforms.
         self.sys_time_elapsed += delta;
+        self.per_frame_uniforms
+            .set_time_elapsed_seconds(self.sys_time_elapsed);
 
         self.per_frame_uniforms
             .set_view_projection(self.camera.view_projection_matrix());
         self.per_frame_uniforms.set_view_pos(self.camera.eye());
-        self.per_frame_uniforms
-            .set_time_elapsed_seconds(self.sys_time_elapsed);
 
+        // Update renderer per-scene shader uniforms.
         self.per_frame_uniforms.clear_lights();
 
-        for light in &self.directional_lights {
+        for light in &scene.directional_lights {
             self.per_frame_uniforms.add_directional_light(light);
         }
 
-        for light in &self.spot_lights {
+        for light in &scene.spot_lights {
             self.per_frame_uniforms.add_spot_light(light);
         }
 
-        self.per_frame_uniforms.update_gpu(&self.queue);
-
         // Update uniforms for each model that will be rendered.
-        for model in &mut self.models.iter_mut() {
-            model.uniforms_mut().clear_lights();
+        for model in scene.models.iter() {
+            let model_sv = &mut self.model_shader_vals[model.model_sv_key];
 
-            for light in &self.point_lights {
-                model.uniforms_mut().add_point_light(light);
+            // Does the transform matrix need to be updated?
+            if model.is_model_sv_dirty() {
+                model_sv.set_local_to_world(Mat4::from_scale_rotation_translation(
+                    model.scale(),
+                    model.rotation(),
+                    model.translation(),
+                ));
             }
 
-            model.prepare(&self.queue);
+            // Add lights closest to the model.
+            model_sv.clear_lights();
+
+            for light in &scene.point_lights {
+                model_sv.add_point_light(light);
+            }
+
+            // Copy the model's shader values to the GPU and then mark its
+            // shader values object as having been updated.
+            model_sv.update_gpu(&self.queue);
+            model.mark_model_sv_updated();
         }
 
-        // Lighting debug information.
-        for light in &self.point_lights {
-            self.light_debug_pass.add_point_light(light);
-        }
+        // Let render overlays update resources.
+        self.light_debug_pass.prepare(&self.queue, scene);
 
-        self.light_debug_pass.prepare(&self.queue);
+        // Copy updated per frame uniform values to the GPU.
+        self.per_frame_uniforms.update_gpu(&self.queue);
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, scene: &Scene, delta: Duration) -> Result<(), wgpu::SurfaceError> {
+        // Prepare GPU resources for rendering.
+        self.prepare_render(scene, delta);
+
+        // Start rendering the frame.
         let backbuffer = self.surface.get_current_texture()?;
         let view = backbuffer
             .texture
@@ -374,8 +391,8 @@ impl<'a> Renderer<'a> {
             debug_assert!(!self.per_frame_uniforms.is_dirty());
             render_pass.set_bind_group(0, self.per_frame_uniforms.bind_group(), &[]);
 
-            for model in self.models.iter() {
-                render_pass.draw_model(model);
+            for model in scene.models.iter() {
+                render_pass.draw_model(model, &self.model_shader_vals[model.model_sv_key]);
             }
         }
 
@@ -403,5 +420,25 @@ impl<'a> Renderer<'a> {
 
     pub fn window_size(&self) -> winit::dpi::PhysicalSize<u32> {
         self.window_size
+    }
+
+    /// Returns a new model that can be added to a scene and rendered.
+    pub fn create_model(
+        &mut self,
+        mesh: Rc<Mesh>,
+        translation: Vec3,
+        rotation: Quat,
+        scale: Vec3,
+    ) -> Model {
+        Model::new(
+            self.model_shader_vals.insert(PerModelShaderVals::new(
+                &self.device,
+                &self.bind_group_layouts,
+            )),
+            mesh,
+            translation,
+            rotation,
+            scale,
+        )
     }
 }

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tracing::{error, warn};
 
-use crate::renderer::Renderer;
+use crate::renderer::{scene::Scene, Renderer};
 
 /// Dispatches events coming from the underlying platform to the game for
 /// execution.
@@ -40,9 +40,8 @@ impl<'a> GameAppHost<'a> {
 
     pub fn render(&mut self, delta: Duration) {
         self.game.prepare_render(&mut self.renderer, delta);
-        self.renderer.prepare_render(delta);
 
-        match self.renderer.render() {
+        match self.renderer.render(self.game.render_scene(), delta) {
             Ok(_) => {}
             // Reconfigure surface when lost:
             Err(wgpu::SurfaceError::Lost) | Err(wgpu::SurfaceError::Outdated) => {
@@ -102,4 +101,7 @@ pub trait GameApp {
 
     /// Called by the host when user moves the scroll wheel up or down.
     fn mouse_scroll_wheel(&mut self, _delta_x: f64, _delta_y: f64) {}
+
+    /// Returns the render scene for the game app.
+    fn render_scene(&self) -> &Scene;
 }
