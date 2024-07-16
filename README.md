@@ -21,18 +21,18 @@ $ cargo run
 To build this project for web assembly perform the following steps:
 ```
 $ cargo install wasm-pack
-$ wasm-pack build . --target web
+$ python3 -m pygametools.web_build
 ```
 
 Once built you will need to set up a web server that is pointed to the `pkg`
-subfolder. Here is a fast way of accomplishing that with microserver:
+subfolder. Developers can make use of a builtin server for testing by passing
+`-i` to the `pygametools.web_build` script:
 
 ```
-$ cargo install microserver 
-$ microserver
+$ python3 -m pygametools.web_build -i 
 ```
 
-Open up your web browser to `http://localhost:9090` and you should see the
+Open up your web browser to `http://localhost:9000` and you should see the
 demo scene!
 
 # Demos
